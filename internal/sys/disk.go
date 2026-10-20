@@ -31,8 +31,8 @@ func SetLimits(warnGB, pauseGB, stopMB float64) {
 // FreeDisk devolve quanto sobra no disco da sua pasta pessoal.
 // 0 quando não deu pra ler.
 func FreeDisk() uint64 {
-	// BOT_DISK_FILE aponta pra um arquivo com MB livres, pra testar sem encher o disco
-	if f := os.Getenv("BOT_DISK_FILE"); f != "" {
+	// TARS_DISK_FILE aponta pra um arquivo com MB livres, pra testar sem encher o disco
+	if f := os.Getenv("TARS_DISK_FILE"); f != "" {
 		if data, err := os.ReadFile(f); err == nil {
 			if mb, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64); err == nil {
 				return mb * MB
@@ -64,11 +64,11 @@ func HasMole() bool {
 	return err == nil
 }
 
-// MoleClean é o comando da limpeza do Mole, pra rodar no lugar do bot.
+// MoleClean é o comando da limpeza do Mole, pra rodar no lugar do tars.
 func MoleClean() *exec.Cmd { return exec.Command("mo", "clean") }
 
 // OpenMole abre a limpeza do Mole numa janela nova do mesmo app de
-// terminal que você está usando, pro bot continuar aberto.
+// terminal que você está usando, pro tars continuar aberto.
 func OpenMole() error {
 	var script string
 	switch os.Getenv("TERM_PROGRAM") {

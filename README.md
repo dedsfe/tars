@@ -1,4 +1,4 @@
-# bot
+# tars
 
 **Your terminal AIs, working together in a group chat.**
 Claude, Codex, Antigravity, Cursor, OpenCode and Ollama in the same room: they read the same conversation, tag each other with `@`, hand off work, and tag **you** when they need a decision.
@@ -47,21 +47,21 @@ Each AI is good at something different. Instead of copy-pasting between five ter
 - **Voice**: `ctrl+r` records and transcribes locally with Whisper. Nothing leaves your Mac. Optional, downloaded on first use.
 - **Plan limits on screen**: Claude and Codex usage (5h and weekly windows), Antigravity tokens per day. Agents that hit a limit wait and resume on their own.
 - **Disk guard**: pauses the AIs before your disk fills up, and offers a cleanup with [Mole](https://github.com/tw93/Mole) when it gets tight.
-- **Everything in plain files** under `~/.bot`: one JSON per group, one JSONL per conversation.
+- **Everything in plain files** under `~/.tars`: one JSON per group, one JSONL per conversation.
 
 ## Install
 
 Requires macOS, Go 1.25+ and at least one AI CLI logged in (`claude`, `codex`, `agy`, `cursor-agent`, `opencode` or `ollama`).
 
 ```sh
-go install github.com/dedsfe/bot@latest
-bot
+go install github.com/dedsfe/tars@latest
+tars
 ```
 
 Optional extras:
 
 ```sh
-brew install ffmpeg whisper-cpp   # voice (bot offers to install it on first ctrl+r)
+brew install ffmpeg whisper-cpp   # voice (tars offers to install it on first ctrl+r)
 brew install mole                 # disk cleanup
 ```
 
@@ -78,7 +78,7 @@ brew install mole                 # disk cleanup
 | `ctrl+l` | clean the disk with Mole |
 | `esc` | leave the chat (AIs keep working) |
 
-Every shortcut can be changed in `~/.bot/config.toml`, created on first run with comments:
+Every shortcut can be changed in `~/.tars/config.toml`, created on first run with comments:
 
 ```toml
 no_mention = "lead"   # or "all": who answers when you tag nobody
@@ -89,7 +89,7 @@ enabled = true
 [disk]
 warn_gb = 5
 pause_gb = 2
-mole = "inside"       # or "window": run Mole in place of bot, or in a new window
+mole = "inside"       # or "window": run Mole in place of tars, or in a new window
 
 [keys]
 voice = "ctrl+r"
@@ -107,7 +107,7 @@ internal/
   usage/     plan limits (Claude events, Codex session logs)
   voice/     recording (ffmpeg) and local transcription (whisper.cpp)
   attach/    images dropped or pasted into the chat
-  config/    ~/.bot/config.toml
+  config/    ~/.tars/config.toml
   ui/        terminal screens (Bubble Tea)
 ```
 

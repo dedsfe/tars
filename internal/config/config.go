@@ -1,4 +1,4 @@
-// Package config lê ~/.bot/config.toml. Se o arquivo não existe, ele é
+// Package config lê ~/.tars/config.toml. Se o arquivo não existe, ele é
 // criado com os valores padrão e comentários explicando cada opção.
 package config
 
@@ -38,8 +38,8 @@ type Disk struct {
 
 // Onde a limpeza do Mole roda.
 const (
-	MoleInside = "inside" // no lugar do bot, que volta quando o Mole fecha
-	MoleWindow = "window" // numa janela nova do terminal, com o bot aberto
+	MoleInside = "inside" // no lugar do tars, que volta quando o Mole fecha
+	MoleWindow = "window" // numa janela nova do terminal, com o tars aberto
 )
 
 // Keys são os atalhos do chat, no formato do Bubble Tea ("ctrl+r", "alt+v"...).
@@ -68,8 +68,8 @@ func Default() Config {
 	}
 }
 
-const template = `# Configuração do bot. Apague uma linha pra voltar ao padrão.
-# bot settings. Delete a line to go back to the default.
+const template = `# Configuração do tars. Apague uma linha pra voltar ao padrão.
+# tars settings. Delete a line to go back to the default.
 
 # Quem responde quando você não marca ninguém: "lead" (só o líder) ou "all" (todos).
 # Who answers when you mention nobody: "lead" or "all".
@@ -87,9 +87,9 @@ microphone = ""
 warn_gb = 5    # barra fica amarela / bar turns yellow
 pause_gb = 2   # IAs param de começar trabalho novo / agents stop starting work
 stop_mb = 500  # quem está trabalhando é parado / running agents are stopped
-# Onde a limpeza do Mole abre: "inside" (no lugar do bot, que volta quando
-# você sai do Mole) ou "window" (janela nova, o bot continua aberto).
-# Where Mole cleanup opens: "inside" (bot comes back after) or "window".
+# Onde a limpeza do Mole abre: "inside" (no lugar do tars, que volta quando
+# você sai do Mole) ou "window" (janela nova, o tars continua aberto).
+# Where Mole cleanup opens: "inside" (tars comes back after) or "window".
 mole = "inside"
 
 [keys]

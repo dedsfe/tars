@@ -1,4 +1,4 @@
-// Package store guarda os grupos em ~/.bot/grupos, um JSON por grupo.
+// Package store guarda os grupos em ~/.tars/grupos, um JSON por grupo.
 package store
 
 import (
@@ -35,15 +35,22 @@ type Group struct {
 
 type Store struct{ dir string }
 
-// Open usa ~/.bot/grupos, ou BOT_DIR quando definido (útil pra testes).
+// Open usa ~/.tars/grupos, ou TARS_DIR quando definido (útil pra testes).
 func Open() (*Store, error) {
-	dir := os.Getenv("BOT_DIR")
+	dir := os.Getenv("TARS_DIR")
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, err
 		}
-		dir = filepath.Join(home, ".bot", "grupos")
+		root := filepath.Join(home, ".tars")
+		// quem usava a versão antiga (~/.bot) leva os grupos junto
+		if _, err := os.Stat(root); os.IsNotExist(err) {
+			if old := filepath.Join(home, ".bot"); isDir(old) {
+				_ = os.Rename(old, root)
+			}
+		}
+		dir = filepath.Join(root, "grupos")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -51,7 +58,12 @@ func Open() (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-// Root é a pasta do bot (a que contém grupos/), onde ficam outras configurações.
+func isDir(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
+}
+
+// Root é a pasta do tars (a que contém grupos/), onde ficam outras configurações.
 func (s *Store) Root() string { return filepath.Dir(s.dir) }
 
 // List devolve os grupos do mais novo pro mais antigo.
@@ -122,7 +134,7 @@ func slug(name string) string {
 
 // Message é uma fala no chat do grupo.
 type Message struct {
-	From  string    `json:"from"` // handle da IA, "" = você, "sistema" = aviso do bot
+	From  string    `json:"from"` // handle da IA, "" = você, "sistema" = aviso do tars
 	Text  string    `json:"text"`
 	At    time.Time `json:"at"`
 	Error bool      `json:"error,omitempty"`
@@ -135,7 +147,7 @@ func (s *Store) Attachments(groupID string) string {
 	return filepath.Join(s.Root(), "anexos", groupID)
 }
 
-// System é o remetente dos avisos do próprio bot.
+// System é o remetente dos avisos do próprio tars.
 const System = "sistema"
 
 func (s *Store) chatPath(groupID string) string {

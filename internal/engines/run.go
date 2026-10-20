@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"bot/internal/usage"
+	"github.com/dedsfe/tars/internal/usage"
 )
 
 // Result é o que a IA respondeu e, quando ela informa, o limite do plano.
@@ -149,7 +149,7 @@ func command(t Turn) (args []string, outFile string, err error) {
 			args = append(args, "--model", model)
 		}
 	case "codex":
-		f, err := os.CreateTemp("", "bot-codex-*.txt")
+		f, err := os.CreateTemp("", "tars-codex-*.txt")
 		if err != nil {
 			return nil, "", err
 		}

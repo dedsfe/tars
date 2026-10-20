@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"bot/internal/engines"
-	"bot/internal/sys"
-	"bot/internal/usage"
+	"github.com/dedsfe/tars/internal/engines"
+	"github.com/dedsfe/tars/internal/sys"
+	"github.com/dedsfe/tars/internal/usage"
 
 	"github.com/charmbracelet/lipgloss"
 )

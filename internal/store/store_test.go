@@ -6,7 +6,7 @@ import (
 )
 
 func TestSaveListAndChat(t *testing.T) {
-	t.Setenv("BOT_DIR", t.TempDir())
+	t.Setenv("TARS_DIR", t.TempDir())
 	st, err := Open()
 	if err != nil {
 		t.Fatal(err)

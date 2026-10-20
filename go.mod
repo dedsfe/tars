@@ -1,4 +1,4 @@
-module bot
+module github.com/dedsfe/tars
 
 go 1.25.0
 

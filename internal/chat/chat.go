@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"bot/internal/store"
+	"github.com/dedsfe/tars/internal/store"
 )
 
 // Everyone é o @ que chama o grupo inteiro; EveryoneEN faz o mesmo em inglês.
@@ -33,7 +33,7 @@ const (
 var mentionRe = regexp.MustCompile(`@([A-Za-z0-9][A-Za-z0-9_-]*)`)
 
 var me = sync.OnceValue(func() string {
-	if h := strings.ToLower(strings.TrimPrefix(os.Getenv("BOT_ME"), "@")); h != "" {
+	if h := strings.ToLower(strings.TrimPrefix(os.Getenv("TARS_ME"), "@")); h != "" {
 		return h
 	}
 	if u, err := user.Current(); err == nil {
@@ -46,7 +46,7 @@ var me = sync.OnceValue(func() string {
 	return "voce"
 })
 
-// Me é o seu @ no grupo, tirado do seu primeiro nome no Mac (BOT_ME troca).
+// Me é o seu @ no grupo, tirado do seu primeiro nome no Mac (TARS_ME troca).
 func Me() string { return me() }
 
 var accents = strings.NewReplacer(
@@ -228,7 +228,7 @@ func Speaker(from string) string {
 	case "":
 		return "@" + Me() + " (humano)"
 	case store.System:
-		return "aviso do bot"
+		return "aviso do tars"
 	}
 	return "@" + from
 }

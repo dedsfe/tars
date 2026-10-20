@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"bot/internal/attach"
-	"bot/internal/chat"
-	"bot/internal/config"
-	"bot/internal/engines"
-	"bot/internal/store"
-	"bot/internal/sys"
-	"bot/internal/usage"
-	"bot/internal/voice"
+	"github.com/dedsfe/tars/internal/attach"
+	"github.com/dedsfe/tars/internal/chat"
+	"github.com/dedsfe/tars/internal/config"
+	"github.com/dedsfe/tars/internal/engines"
+	"github.com/dedsfe/tars/internal/store"
+	"github.com/dedsfe/tars/internal/sys"
+	"github.com/dedsfe/tars/internal/usage"
+	"github.com/dedsfe/tars/internal/voice"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -550,7 +550,7 @@ func (c *chatScreen) speaker(from string) string {
 	case "":
 		return sTitle.Render("você") + sFaint.Render(" @"+chat.Me())
 	case store.System:
-		return sMuted.Render("bot")
+		return sMuted.Render("tars")
 	}
 	if m, ok := chat.Member(c.g, from); ok {
 		return at(m.Handle, m.Color)
@@ -683,7 +683,7 @@ func (c *chatScreen) status() string {
 		parts = append(parts, sActive.Render("Pra ouvir sua voz falta instalar "+strings.Join(voice.MissingTools(), " e ")+
 			" pelo Homebrew.")+sMuted.Render("  enter instala · esc cancela"))
 	case "model":
-		parts = append(parts, sActive.Render("Pra ouvir sua voz o bot baixa o Whisper (~550 MB, roda só no seu Mac).")+
+		parts = append(parts, sActive.Render("Pra ouvir sua voz o tars baixa o Whisper (~550 MB, roda só no seu Mac).")+
 			sMuted.Render("  enter baixa · esc cancela"))
 	}
 	for _, m := range c.g.Members {

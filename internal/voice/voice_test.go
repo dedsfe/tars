@@ -10,10 +10,10 @@ import (
 )
 
 // Gera uma fala com o say do macOS e confere se o Whisper transcreve.
-// Só roda quando o modelo já está baixado em ~/.bot.
+// Só roda quando o modelo já está baixado em ~/.tars.
 func TestTranscribe(t *testing.T) {
 	home, _ := os.UserHomeDir()
-	root := filepath.Join(home, ".bot")
+	root := filepath.Join(home, ".tars")
 	if !Ready(root) {
 		t.Skip("Whisper ou modelo não instalado")
 	}

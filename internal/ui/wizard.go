@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"bot/internal/chat"
-	"bot/internal/engines"
-	"bot/internal/store"
+	"github.com/dedsfe/tars/internal/chat"
+	"github.com/dedsfe/tars/internal/engines"
+	"github.com/dedsfe/tars/internal/store"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"

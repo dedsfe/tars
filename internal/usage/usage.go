@@ -178,7 +178,7 @@ type Cache struct {
 	Tokens map[string]DayTokens `json:"tokens,omitempty"`
 }
 
-// DayTokens soma os tokens que uma IA gastou pelo bot num dia.
+// DayTokens soma os tokens que uma IA gastou pelo tars num dia.
 // Serve pras IAs que não informam o limite do plano (Antigravity).
 type DayTokens struct {
 	Day   string `json:"day"` // AAAA-MM-DD

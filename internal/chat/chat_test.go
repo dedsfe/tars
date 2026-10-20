@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"bot/internal/store"
+	"github.com/dedsfe/tars/internal/store"
 )
 
 var group = store.Group{

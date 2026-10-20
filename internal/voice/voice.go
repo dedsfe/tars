@@ -176,11 +176,11 @@ func Transcribe(ctx context.Context, root, wav string, hints []string) (string, 
 }
 
 // microphone escolhe o microfone do Mac, não o do iPhone (Continuidade).
-// Microphone (do config.toml) ou BOT_MIC trocam pelo índice ou nome que você quiser.
+// Microphone (do config.toml) ou TARS_MIC trocam pelo índice ou nome que você quiser.
 var Microphone string
 
 func microphone() string {
-	if m := os.Getenv("BOT_MIC"); m != "" {
+	if m := os.Getenv("TARS_MIC"); m != "" {
 		return m
 	}
 	if Microphone != "" {

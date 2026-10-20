@@ -1,4 +1,4 @@
-// Package ui é a tela do bot no terminal.
+// Package ui é a tela do tars no terminal.
 package ui
 
 import (
@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"bot/internal/chat"
-	"bot/internal/config"
-	"bot/internal/engines"
-	"bot/internal/store"
-	"bot/internal/sys"
-	"bot/internal/usage"
+	"github.com/dedsfe/tars/internal/chat"
+	"github.com/dedsfe/tars/internal/config"
+	"github.com/dedsfe/tars/internal/engines"
+	"github.com/dedsfe/tars/internal/store"
+	"github.com/dedsfe/tars/internal/sys"
+	"github.com/dedsfe/tars/internal/usage"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -103,7 +103,7 @@ func (a *App) checkLimits() tea.Cmd {
 			name = e.Name
 		}
 		text := fmt.Sprintf("%s já usou %.0f%% do limite (%s). Volta %s.", name, w.Used, w.Name, when(w.ResetsAt))
-		chat.Notify("bot", "Limite perto do fim", text)
+		chat.Notify("tars", "Limite perto do fim", text)
 		for _, c := range a.chats {
 			for _, m := range c.g.Members {
 				if m.Engine == id {
@@ -148,11 +148,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case a.cfg.Keys.CleanDisk:
 			if a.screen != screenWizard && sys.HasMole() {
 				if a.cfg.Disk.Mole == config.MoleInside {
-					// o bot dá lugar ao Mole e volta quando você sai dele
+					// o tars dá lugar ao Mole e volta quando você sai dele
 					a.before = sys.FreeDisk()
 					return a, tea.ExecProcess(sys.MoleClean(), func(err error) tea.Msg { return moleDoneMsg{err} })
 				}
-				// o Mole abre numa janela nova e o bot segue aqui, medindo o espaço
+				// o Mole abre numa janela nova e o tars segue aqui, medindo o espaço
 				if err := sys.OpenMole(); err != nil {
 					a.flash = sError.Render("Não consegui abrir o Mole: " + err.Error())
 					return a, nil
@@ -168,9 +168,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.err != nil:
 			a.flash = sError.Render("O Mole fechou com erro: " + msg.err.Error())
 		case after > a.before:
-			a.flash = sActive.Render("De volta ao bot. O Mole liberou " + sys.Size(after-a.before) + ".")
+			a.flash = sActive.Render("De volta ao tars. O Mole liberou " + sys.Size(after-a.before) + ".")
 		default:
-			a.flash = sMuted.Render("De volta ao bot. O espaço livre não mudou.")
+			a.flash = sMuted.Render("De volta ao tars. O espaço livre não mudou.")
 		}
 		a.before = 0
 		return a, watchDisk(0)
@@ -316,7 +316,7 @@ func (a *App) View() string {
 
 func (a *App) viewHome() string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render("bot") + sMuted.Render("  suas IAs trabalhando juntas") + "\n")
+	b.WriteString(sTitle.Render("tars") + sMuted.Render("  suas IAs trabalhando juntas") + "\n")
 	b.WriteString(statusBar(a.disk, a.limits, a.engines) + "\n\n")
 
 	b.WriteString(pointer(a.cursor == 0))
