@@ -35,12 +35,16 @@ type Group struct {
 
 type Store struct{ dir string }
 
+// Open usa ~/.bot/grupos, ou BOT_DIR quando definido (útil pra testes).
 func Open() (*Store, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
+	dir := os.Getenv("BOT_DIR")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		dir = filepath.Join(home, ".bot", "grupos")
 	}
-	dir := filepath.Join(home, ".bot", "grupos")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -111,4 +115,56 @@ func slug(name string) string {
 		return "grupo"
 	}
 	return out
+}
+
+// Message é uma fala no chat do grupo.
+type Message struct {
+	From  string    `json:"from"` // handle da IA, "" = você, "sistema" = aviso do bot
+	Text  string    `json:"text"`
+	At    time.Time `json:"at"`
+	Error bool      `json:"error,omitempty"`
+}
+
+// System é o remetente dos avisos do próprio bot.
+const System = "sistema"
+
+func (s *Store) chatPath(groupID string) string {
+	return filepath.Join(s.dir, groupID+".chat.jsonl")
+}
+
+// Messages lê o histórico do chat do grupo.
+func (s *Store) Messages(groupID string) ([]Message, error) {
+	data, err := os.ReadFile(s.chatPath(groupID))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var msgs []Message
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var m Message
+		if json.Unmarshal([]byte(line), &m) == nil {
+			msgs = append(msgs, m)
+		}
+	}
+	return msgs, nil
+}
+
+// Append grava uma mensagem no fim do chat.
+func (s *Store) Append(groupID string, m Message) error {
+	line, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(s.chatPath(groupID), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
 }

@@ -627,7 +627,7 @@ func (w *wizard) build() store.Group {
 
 func (w *wizard) viewReview() string {
 	g := w.build()
-	return sLabel.Render("Nome") + "\n" + sText.Render(g.Name) + "\n\n" + groupSummary(g, w.engines)
+	return sLabel.Render("Nome") + "\n" + sText.Render(g.Name) + "\n\n" + groupSummary(g, w.engines, max(20, w.width-6))
 }
 
 // --- Tela ---

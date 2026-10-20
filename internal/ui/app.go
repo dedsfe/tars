@@ -8,13 +8,15 @@ import (
 	"bot/internal/engines"
 	"bot/internal/store"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const (
 	screenHome = iota
 	screenWizard
-	screenGroup
+	screenChat
 )
 
 type App struct {
@@ -24,14 +26,15 @@ type App struct {
 	screen  int
 	cursor  int // 0 = novo grupo, 1.. = grupos
 	wiz     *wizard
-	open    store.Group
-	notice  string
+	chats   map[string]*chatScreen // ficam vivos pra IAs seguirem trabalhando
+	open    *chatScreen
 	err     string
 	width   int
+	height  int
 }
 
 func New(st *store.Store, list []engines.Engine) *App {
-	a := &App{store: st, engines: list, width: 80}
+	a := &App{store: st, engines: list, chats: map[string]*chatScreen{}, width: 80, height: 24}
 	a.reload()
 	return a
 }
@@ -46,16 +49,26 @@ func (a *App) reload() {
 
 func (a *App) Init() tea.Cmd { return nil }
 
+func (a *App) stopAll() {
+	for _, c := range a.chats {
+		c.stop()
+	}
+}
+
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		a.width = msg.Width
+		a.width, a.height = msg.Width, msg.Height
 		if a.wiz != nil {
 			a.wiz.resize(msg.Width)
+		}
+		for _, c := range a.chats {
+			c.resize(msg.Width, msg.Height)
 		}
 		return a, nil
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
+			a.stopAll()
 			return a, tea.Quit
 		}
 	case wizardCancelMsg:
@@ -69,9 +82,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.reload()
 		a.wiz = nil
-		a.screen, a.open = screenGroup, g
-		a.notice = "Grupo criado."
+		a.cursor = a.indexOf(g.ID) + 1
+		return a, a.openChat(g)
+	case turnDoneMsg:
+		// a resposta vai pro chat certo, mesmo com você em outra tela
+		if c, ok := a.chats[msg.groupID]; ok {
+			_, cmd, _ := c.Update(msg)
+			return a, cmd
+		}
 		return a, nil
+	case spinner.TickMsg:
+		var cmds []tea.Cmd
+		for _, c := range a.chats {
+			_, cmd, _ := c.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+		return a, tea.Batch(cmds...)
 	}
 
 	switch a.screen {
@@ -79,12 +105,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		a.wiz, cmd = a.wiz.Update(msg)
 		return a, cmd
-	case screenGroup:
-		if k, ok := msg.(tea.KeyMsg); ok && (k.String() == "esc" || k.String() == "q") {
-			a.screen, a.notice = screenHome, ""
-			a.cursor = a.indexOf(a.open.ID) + 1
+	case screenChat:
+		_, cmd, leave := a.open.Update(msg)
+		if leave {
+			a.screen, a.open = screenHome, nil
 		}
-		return a, nil
+		return a, cmd
 	}
 	return a, a.updateHome(msg)
 }
@@ -96,6 +122,7 @@ func (a *App) updateHome(msg tea.Msg) tea.Cmd {
 	}
 	switch k.String() {
 	case "q", "esc":
+		a.stopAll()
 		return tea.Quit
 	case "up", "k":
 		a.cursor = max(a.cursor-1, 0)
@@ -107,10 +134,20 @@ func (a *App) updateHome(msg tea.Msg) tea.Cmd {
 		if a.cursor == 0 {
 			return a.startWizard()
 		}
-		a.open = a.groups[a.cursor-1]
-		a.screen, a.notice = screenGroup, ""
+		return a.openChat(a.groups[a.cursor-1])
 	}
 	return nil
+}
+
+func (a *App) openChat(g store.Group) tea.Cmd {
+	c, ok := a.chats[g.ID]
+	if !ok {
+		c = newChat(a.store, g, a.engines, a.width, a.height)
+		a.chats[g.ID] = c
+	}
+	c.refresh(true)
+	a.open, a.screen = c, screenChat
+	return c.input.Focus()
 }
 
 func (a *App) startWizard() tea.Cmd {
@@ -132,8 +169,8 @@ func (a *App) View() string {
 	switch a.screen {
 	case screenWizard:
 		return sPage.Render(a.wiz.View())
-	case screenGroup:
-		return sPage.Render(a.viewGroup())
+	case screenChat:
+		return sPage.Render(a.open.View())
 	}
 	return sPage.Render(a.viewHome())
 }
@@ -161,7 +198,11 @@ func (a *App) viewHome() string {
 		if on {
 			name = sActive.Render(g.Name)
 		}
-		b.WriteString(pointer(on) + name + "  " + handles(g) + "\n")
+		line := pointer(on) + name + "  " + handles(g)
+		if c, ok := a.chats[g.ID]; ok && c.busy() {
+			line += sActive.Render("  trabalhando")
+		}
+		b.WriteString(line + "\n")
 		b.WriteString("  " + sFaint.Render(truncate(oneLine(g.Goal), max(20, a.width-8))) + "\n")
 	}
 	if a.err != "" {
@@ -171,21 +212,14 @@ func (a *App) viewHome() string {
 	return b.String()
 }
 
-func (a *App) viewGroup() string {
-	var b strings.Builder
-	b.WriteString(sTitle.Render(a.open.Name))
-	if a.notice != "" {
-		b.WriteString("  " + sActive.Render(a.notice))
-	}
-	b.WriteString("\n\n" + groupSummary(a.open, a.engines))
-	b.WriteString(sHelp.Render("esc volta"))
-	return b.String()
-}
+// groupSummary mostra objetivo, pasta, líder e membros, quebrando
+// as linhas longas na largura da tela.
+func groupSummary(g store.Group, list []engines.Engine, width int) string {
+	wrap := lipgloss.NewStyle().Width(max(20, width))
+	wrapRole := lipgloss.NewStyle().Width(max(18, width-2))
 
-// groupSummary mostra objetivo, pasta, líder e membros.
-func groupSummary(g store.Group, list []engines.Engine) string {
 	var b strings.Builder
-	b.WriteString(sLabel.Render("Objetivo") + "\n" + sText.Render(g.Goal) + "\n\n")
+	b.WriteString(sLabel.Render("Objetivo") + "\n" + sText.Render(wrap.Render(g.Goal)) + "\n\n")
 	b.WriteString(sLabel.Render("Pasta  ") + sText.Render(tildify(g.Folder)) + "\n\n")
 	b.WriteString(sLabel.Render("Membros") + "\n")
 	for _, m := range g.Members {
@@ -202,7 +236,7 @@ func groupSummary(g store.Group, list []engines.Engine) string {
 			line += sActive.Render("  líder")
 		}
 		b.WriteString(line + "\n")
-		b.WriteString("  " + sText.Render(m.Role) + "\n")
+		b.WriteString(indent(sText.Render(wrapRole.Render(m.Role)), "  ") + "\n")
 	}
 	return b.String()
 }
