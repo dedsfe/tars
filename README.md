@@ -61,6 +61,8 @@ go install github.com/dedsfe/tars@latest
 tars
 ```
 
+No Go? Grab the binary for your Mac from [Releases](https://github.com/dedsfe/tars/releases/latest) (Apple Silicon or Intel), then `xattr -d com.apple.quarantine tars` since it is not notarized yet.
+
 Optional extras:
 
 ```sh
