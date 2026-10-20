@@ -20,11 +20,13 @@ type Turn struct {
 	Model  string // vazio = padrão da IA
 	Folder string
 	Prompt string
+	// FullAccess é o "Mac inteiro" que você escolheu no perfil da IA:
+	// ela roda sem pedir permissão pra nada.
+	FullAccess bool
 }
 
 // Run roda a IA sem interface e devolve a resposta final dela.
-// Todas rodam no modo seguro de cada CLI: editam arquivos da pasta do
-// grupo, mas nada de liberar permissões sem você aprovar.
+// Sem FullAccess roda no modo seguro de cada CLI (edita a pasta do grupo).
 func Run(ctx context.Context, t Turn) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, TurnTimeout)
 	defer cancel()
@@ -77,7 +79,12 @@ func command(t Turn) (args []string, outFile string, err error) {
 	model := t.Model
 	switch t.Engine {
 	case "claude":
-		args = []string{"-p", t.Prompt, "--output-format", "text", "--permission-mode", "acceptEdits"}
+		args = []string{"-p", t.Prompt, "--output-format", "text"}
+		if t.FullAccess {
+			args = append(args, "--dangerously-skip-permissions")
+		} else {
+			args = append(args, "--permission-mode", "acceptEdits")
+		}
 		if model != "" {
 			args = append(args, "--model", model)
 		}
@@ -88,23 +95,41 @@ func command(t Turn) (args []string, outFile string, err error) {
 		}
 		f.Close()
 		outFile = f.Name()
-		args = []string{"exec", "--skip-git-repo-check", "-C", t.Folder, "-s", "workspace-write", "-o", outFile}
+		args = []string{"exec", "--skip-git-repo-check", "-C", t.Folder, "-o", outFile}
+		if t.FullAccess {
+			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		} else {
+			args = append(args, "-s", "workspace-write")
+		}
 		if model != "" {
 			args = append(args, "-m", model)
 		}
 		args = append(args, t.Prompt)
 	case "gemini":
-		args = []string{"-p", t.Prompt, "--approval-mode", "auto_edit"}
+		args = []string{"-p", t.Prompt}
+		if t.FullAccess {
+			args = append(args, "--yolo")
+		} else {
+			args = append(args, "--approval-mode", "auto_edit")
+		}
 		if model != "" {
 			args = append(args, "-m", model)
 		}
 	case "agy":
-		args = []string{"-p", t.Prompt, "--output-format", "text", "--add-dir", t.Folder, "--mode", "accept-edits"}
+		args = []string{"-p", t.Prompt, "--output-format", "text", "--add-dir", t.Folder}
+		if t.FullAccess {
+			args = append(args, "--dangerously-skip-permissions")
+		} else {
+			args = append(args, "--mode", "accept-edits")
+		}
 		if model != "" {
 			args = append(args, "--model", model)
 		}
 	case "cursor-agent":
 		args = []string{"-p", "--output-format", "text", "--workspace", t.Folder}
+		if t.FullAccess {
+			args = append(args, "--force", "--approve-mcps")
+		}
 		if model != "" {
 			args = append(args, "--model", model)
 		}

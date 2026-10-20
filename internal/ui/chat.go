@@ -220,10 +220,11 @@ func (c *chatScreen) pump() tea.Cmd {
 func (c *chatScreen) turn(j job) tea.Cmd {
 	me, _ := chat.Member(c.g, j.handle)
 	t := engines.Turn{
-		Engine: me.Engine,
-		Model:  me.Model,
-		Folder: c.g.Folder,
-		Prompt: chat.Prompt(c.g, me, j.by, append([]store.Message(nil), c.msgs...)),
+		Engine:     me.Engine,
+		Model:      me.Model,
+		Folder:     c.g.Folder,
+		FullAccess: me.FullAccess,
+		Prompt:     chat.Prompt(c.g, me, j.by, append([]store.Message(nil), c.msgs...)),
 	}
 	ctx, groupID := c.ctx, c.g.ID
 	return func() tea.Msg {
