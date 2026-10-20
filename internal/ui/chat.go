@@ -249,6 +249,12 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 			var cmd tea.Cmd
 			c.vp, cmd = c.vp.Update(msg)
 			return c, cmd, false
+		case "alt+up", "shift+up":
+			c.vp.ScrollUp(3) // rolagem fina pelo teclado, igual ao trackpad
+			return c, nil, false
+		case "alt+down", "shift+down":
+			c.vp.ScrollDown(3)
+			return c, nil, false
 		case c.cfg.Keys.Paste:
 			// cola um print copiado como imagem anexada
 			path, err := attach.Clipboard(c.st.Attachments(c.g.ID))
@@ -524,7 +530,11 @@ func (c *chatScreen) renderMessages() string {
 			b.WriteString("\n")
 		}
 		b.WriteString(c.speaker(m.From) + "  " + sFaint.Render(m.At.Format("15:04")) + "\n")
-		body := lipgloss.NewStyle().Width(width).Render(m.Text)
+		text := m.Text
+		if m.From != "" && m.From != store.System && !m.Error {
+			text = plainMarkdown(text) // resposta de IA: tira links e títulos antes de quebrar
+		}
+		body := lipgloss.NewStyle().Width(width).Render(text)
 		if m.Text == "" {
 			body = ""
 		}
@@ -533,8 +543,10 @@ func (c *chatScreen) renderMessages() string {
 			body = sError.Render(lipgloss.NewStyle().Width(width).Render(i18n.T("could not reply: %s", m.Text)))
 		case m.From == store.System:
 			body = sMuted.Italic(true).Render(body)
-		default:
+		case m.From == "":
 			body = c.paintMentions(body)
+		default:
+			body = c.paintMentions(styleMarkdown(body))
 		}
 		if body != "" {
 			b.WriteString(indent(body, "  ") + "\n")
