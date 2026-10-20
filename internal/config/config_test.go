@@ -46,3 +46,19 @@ func TestLoadLanguage(t *testing.T) {
 		t.Fatalf("language: %q, error: %v", cfg.Language, err)
 	}
 }
+
+// Quem tem o config.toml de antes ganha as teclas novas sem mexer no arquivo.
+func TestLoadMigratesOldKeys(t *testing.T) {
+	dir := t.TempDir()
+	toml := "[keys]\nstop_all = \"ctrl+x\"\ngroup_info = \"ctrl+g\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Keys.Stop != "esc" || cfg.Keys.Leave != "ctrl+x" || cfg.Keys.GroupInfo != "" || cfg.Keys.StopAll != "" {
+		t.Errorf("teclas antigas: %+v", cfg.Keys)
+	}
+}

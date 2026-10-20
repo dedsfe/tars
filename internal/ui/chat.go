@@ -94,6 +94,7 @@ type chatScreen struct {
 	acts      map[string][]engines.Activity // o que cada uma fez na fala atual
 	log       []logLine                     // painel de tudo que elas fizeram
 	showLog   bool
+	escAt     time.Time // último esc: outro logo depois sai do chat
 
 	vp       viewport.Model
 	input    textarea.Model
@@ -178,6 +179,11 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		return c, c.finish(msg), false
 	case activityMsg:
 		return c, c.onActivity(msg), false
+	case escExpiredMsg:
+		if time.Since(c.escAt) >= leaveWindow {
+			c.escAt = time.Time{}
+		}
+		return c, nil, false
 	case voiceToolsDoneMsg:
 		if msg.err != nil || len(voice.MissingTools()) > 0 {
 			c.err = i18n.T("Setup did not finish. Try again with %s.", c.cfg.Keys.Voice)
@@ -240,7 +246,8 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 				break
 			}
 			return c, c.toggleVoice(), false
-		case "esc":
+		case c.cfg.Keys.Stop, "esc":
+			// primeiro fecha o que estiver aberto
 			if c.voiceSetup != "" {
 				c.voiceSetup = ""
 				return c, nil, false
@@ -254,15 +261,25 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 				c.showInfo, c.showLog = false, false
 				return c, nil, false
 			}
-			return c, nil, true
+			if msg.String() != c.cfg.Keys.Stop {
+				return c, nil, false
+			}
+			// igual nas IAs de terminal: uma vez para quem está trabalhando, duas vezes sai
+			if !c.escAt.IsZero() && time.Since(c.escAt) < leaveWindow {
+				c.escAt = time.Time{}
+				return c, nil, true
+			}
+			c.escAt = time.Now()
+			c.stopAll()
+			return c, tea.Tick(leaveWindow, func(time.Time) tea.Msg { return escExpiredMsg{} }), false
+		case c.cfg.Keys.Leave:
+			return c, nil, true // eles continuam trabalhando
 		case c.cfg.Keys.GroupInfo:
 			c.showInfo, c.showLog = !c.showInfo, false
 			return c, nil, false
 		case c.cfg.Keys.Activity:
 			c.showLog, c.showInfo = !c.showLog, false
 			return c, nil, false
-		case c.cfg.Keys.StopAll:
-			return c, c.stopAll(), false
 		case "pgup", "pgdown":
 			var cmd tea.Cmd
 			c.vp, cmd = c.vp.Update(msg)
@@ -302,6 +319,11 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 			text := strings.TrimSpace(c.input.Value())
 			if text == "" {
 				return c, nil, false
+			}
+			if slashRe.MatchString(text) {
+				c.input.Reset()
+				cmd, leave := c.command(text)
+				return c, cmd, leave
 			}
 			c.input.Reset()
 			return c, c.send(text, msg.String() == c.cfg.Keys.SendNow), false
@@ -613,6 +635,11 @@ func (c *chatScreen) suggestions() []store.Member {
 }
 
 func (c *chatScreen) complete() {
+	if cmds := c.slashSuggestions(); len(cmds) > 0 {
+		c.input.SetValue(cmds[0].name + " ")
+		c.input.CursorEnd()
+		return
+	}
 	s := c.suggestions()
 	if len(s) == 0 {
 		return
@@ -840,7 +867,7 @@ func (c *chatScreen) status() string {
 		}
 	}
 	if len(c.running) > 0 {
-		parts = append(parts, sWarn.Render(i18n.T("%s stop all", c.cfg.Keys.StopAll)))
+		parts = append(parts, sWarn.Render(i18n.T("%s stop all", c.cfg.Keys.Stop)))
 	}
 	if c.unseen {
 		parts = append([]string{sActive.Render(i18n.T("↓ new messages"))}, parts...)
@@ -876,6 +903,16 @@ func (c *chatScreen) View() string {
 		}
 		hint = sMuted.Render(i18n.T("tab complete  ")) + strings.Join(names, " ")
 	}
+	if cmds := c.slashSuggestions(); len(cmds) > 0 {
+		parts := make([]string, len(cmds))
+		for i, cm := range cmds {
+			parts[i] = sActive.Render(cm.name) + sMuted.Render(" "+i18n.T(cm.desc))
+		}
+		hint = sMuted.Render(i18n.T("tab complete  ")) + strings.Join(parts, sFaint.Render(" · "))
+	}
+	if !c.escAt.IsZero() && time.Since(c.escAt) < leaveWindow {
+		hint = sActive.Render(i18n.T("%s again to leave", c.cfg.Keys.Stop))
+	}
 	if _, imgs := attach.Extract(c.input.Value()); len(imgs) > 0 && hint == "" {
 		word := "%d image ready to send"
 		if len(imgs) > 1 {
@@ -891,25 +928,22 @@ func (c *chatScreen) View() string {
 	// do mais importante pro menos: o que não couber na largura fica de fora
 	k := c.cfg.Keys
 	var keys []string
+	mole := c.disk != 0 && c.disk < sys.DiskLow && sys.HasMole()
 	if c.busy() {
-		keys = append(keys, i18n.T("enter send"), i18n.T("%s send now", k.SendNow), i18n.T("%s stop all", k.StopAll), i18n.T("%s see what they are doing", k.Activity))
-	}
-	if c.disk != 0 && c.disk < sys.DiskLow && sys.HasMole() {
-		keys = append(keys, sWarn.Render(i18n.T("%s clean disk (Mole)", k.CleanDisk)))
-	}
-	if c.busy() {
-		keys = append(keys, i18n.T("esc leave (they keep working)"))
+		keys = append(keys, i18n.T("%s stop all", k.Stop), i18n.T("%s leave, they keep working", k.Leave),
+			i18n.T("%s send now", k.SendNow), i18n.T("%s see what they are doing", k.Activity))
+		if mole {
+			keys = append(keys, sWarn.Render(i18n.T("/clean frees disk (Mole)")))
+		}
 	} else {
-		keys = append(keys, i18n.T("enter send"))
-		keys = append(keys, i18n.T("@ mention"), i18n.T("esc leave"))
+		if mole {
+			keys = append(keys, sWarn.Render(i18n.T("/clean frees disk (Mole)")))
+		}
+		keys = append(keys, i18n.T("enter send"), i18n.T("@ mention"), i18n.T("/ commands"), i18n.T("%s twice leaves", k.Stop))
 		if c.cfg.Voice.Enabled {
 			keys = append(keys, i18n.T("%s talk", k.Voice))
 		}
-		keys = append(keys, i18n.T("%s paste screenshot", k.Paste))
-	}
-	keys = append(keys, i18n.T("%s group info", k.GroupInfo))
-	if !c.busy() {
-		keys = append(keys, i18n.T("%s see what they are doing", k.Activity))
+		keys = append(keys, i18n.T("%s paste screenshot", k.Paste), i18n.T("%s see what they are doing", k.Activity))
 	}
 	help := fitKeys(keys, c.vp.Width)
 	b.WriteString(sHelp.Render(help))

@@ -55,11 +55,11 @@ brew install mole                 # limpeza de disco
 | `ctrl+r` | fala (aperte de novo pra transcrever) |
 | `ctrl+v` | cola um print copiado |
 | `ctrl+s` | envia agora: quem você marcou para no meio da fala e já lê sua mensagem |
-| `ctrl+x` | para todo mundo |
 | `ctrl+o` | mostra tudo que eles estão fazendo: arquivos que mexem, comandos que rodam |
-| `ctrl+g` | mostra o grupo |
-| `ctrl+l` | limpa o disco com o Mole |
-| `esc` | sai do chat (as IAs continuam trabalhando) |
+| `esc` | para quem está trabalhando (igual nas outras IAs de terminal) |
+| `esc` `esc` | sai do chat |
+| `ctrl+x` | sai do chat e eles continuam trabalhando |
+| `/` | comandos: `/info` o grupo, `/activity` o que eles estão fazendo, `/stop`, `/clean` libera disco com o Mole, `/leave` |
 
 Todas as teclas mudam em `~/.tars/config.toml`, criado comentado na primeira vez que o tars abre.
 

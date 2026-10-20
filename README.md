@@ -80,11 +80,11 @@ brew install mole                 # disk cleanup
 | `ctrl+r` | talk (press again to transcribe) |
 | `ctrl+v` | paste a copied screenshot |
 | `ctrl+s` | send now: whoever you tagged stops mid-reply and reads your message right away |
-| `ctrl+x` | stop everyone |
 | `ctrl+o` | shows everything they are doing: files they touch, commands they run |
-| `ctrl+g` | show the group |
-| `ctrl+l` | clean the disk with Mole |
-| `esc` | leave the chat (AIs keep working) |
+| `esc` | stop whoever is working (like in other terminal AIs) |
+| `esc` `esc` | leave the chat |
+| `ctrl+x` | leave the chat while they keep working |
+| `/` | commands: `/info` the group, `/activity` what they are doing, `/stop`, `/clean` frees disk with Mole, `/leave` |
 
 Every shortcut can be changed in `~/.tars/config.toml`, created on first run with comments:
 

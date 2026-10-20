@@ -123,6 +123,23 @@ func (a *App) checkLimits() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// cleanDisk abre a limpeza do Mole no lugar do tars ou numa janela nova.
+func (a *App) cleanDisk() tea.Cmd {
+	if a.cfg.Disk.Mole == config.MoleInside {
+		// o tars dá lugar ao Mole e volta quando você sai dele
+		a.before = sys.FreeDisk()
+		return tea.ExecProcess(sys.MoleClean(), func(err error) tea.Msg { return moleDoneMsg{err} })
+	}
+	// o Mole abre numa janela nova e o tars segue aqui, medindo o espaço
+	if err := sys.OpenMole(); err != nil {
+		a.flash = sError.Render(i18n.T("Could not open Mole: %v", err))
+		return nil
+	}
+	a.before = sys.FreeDisk()
+	a.flash = sMuted.Render(i18n.T("Mole opened in a new window. Freed space will show up here."))
+	return nil
+}
+
 func (a *App) stopAll() {
 	for _, c := range a.chats {
 		c.stop()
@@ -148,21 +165,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		case a.cfg.Keys.CleanDisk:
 			if a.screen != screenWizard && sys.HasMole() {
-				if a.cfg.Disk.Mole == config.MoleInside {
-					// o tars dá lugar ao Mole e volta quando você sai dele
-					a.before = sys.FreeDisk()
-					return a, tea.ExecProcess(sys.MoleClean(), func(err error) tea.Msg { return moleDoneMsg{err} })
-				}
-				// o Mole abre numa janela nova e o tars segue aqui, medindo o espaço
-				if err := sys.OpenMole(); err != nil {
-					a.flash = sError.Render(i18n.T("Could not open Mole: %v", err))
-					return a, nil
-				}
-				a.before = sys.FreeDisk()
-				a.flash = sMuted.Render(i18n.T("Mole opened in a new window. Freed space will show up here."))
-				return a, nil
+				return a, a.cleanDisk()
 			}
 		}
+	case cleanDiskMsg:
+		if !sys.HasMole() {
+			a.flash = sError.Render(i18n.T("Mole is not installed. Install it with: brew install mole"))
+			return a, nil
+		}
+		return a, a.cleanDisk()
 	case moleDoneMsg:
 		after := sys.FreeDisk()
 		switch {
@@ -255,7 +266,8 @@ func (a *App) updateHome(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	switch k.String() {
-	case "q", "esc":
+	case "q":
+		// esc não fecha o tars: quem sai do chat com esc esc não pode cair fora sem querer
 		a.stopAll()
 		return tea.Quit
 	case "up", "k":

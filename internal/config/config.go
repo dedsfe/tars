@@ -47,15 +47,19 @@ const (
 )
 
 // Keys são os atalhos do chat, no formato do Bubble Tea ("ctrl+r", "alt+v"...).
+// O padrão copia o costume das IAs de terminal: esc para quem está trabalhando,
+// esc duas vezes sai do chat. O que é raro fica nos comandos com barra (/info, /clean...).
 type Keys struct {
 	Voice     string `toml:"voice"`
 	Paste     string `toml:"paste_image"`
-	StopAll   string `toml:"stop_all"`
+	Stop      string `toml:"stop"`
+	Leave     string `toml:"leave"`
 	SendNow   string `toml:"send_now"`
 	Activity  string `toml:"activity"`
-	GroupInfo string `toml:"group_info"`
+	GroupInfo string `toml:"group_info"` // vazio = só /info
 	CleanDisk string `toml:"clean_disk"`
 	Complete  string `toml:"complete_mention"`
+	StopAll   string `toml:"stop_all"` // nome antigo de stop; lido só pra migrar
 }
 
 func Default() Config {
@@ -68,10 +72,10 @@ func Default() Config {
 		Keys: Keys{
 			Voice:     "ctrl+r",
 			Paste:     "ctrl+v",
-			StopAll:   "ctrl+x",
+			Stop:      "esc",
+			Leave:     "ctrl+x",
 			SendNow:   "ctrl+s",
 			Activity:  "ctrl+o",
-			GroupInfo: "ctrl+g",
 			CleanDisk: "ctrl+l",
 			Complete:  "tab",
 		},
@@ -112,10 +116,11 @@ mole = "inside"
 [keys]
 voice = "ctrl+r"
 paste_image = "ctrl+v"
-stop_all = "ctrl+x"
+stop = "esc"          # para quem está trabalhando; duas vezes sai do chat / stops them; twice leaves the chat
+leave = "ctrl+x"      # sai do chat e eles continuam / leaves the chat, they keep working
 activity = "ctrl+o"   # mostra tudo que eles estão fazendo / shows everything they are doing
 send_now = "ctrl+s"   # manda já, interrompendo quem você marcou / send now, interrupting who you tagged
-group_info = "ctrl+g"
+group_info = ""       # vazio = use /info / empty = use /info
 clean_disk = "ctrl+l"
 complete_mention = "tab"
 `
@@ -144,10 +149,18 @@ func Load(dir string) (Config, error) {
 	}
 	fill(&cfg.Keys.Voice, def.Keys.Voice)
 	fill(&cfg.Keys.Paste, def.Keys.Paste)
-	fill(&cfg.Keys.StopAll, def.Keys.StopAll)
+	// config antiga: ctrl+x parava todo mundo e ctrl+g abria o grupo (padrões de antes)
+	if k := strings.TrimSpace(cfg.Keys.StopAll); k != "" && k != "ctrl+x" {
+		cfg.Keys.Stop = k
+	}
+	cfg.Keys.StopAll = ""
+	if cfg.Keys.GroupInfo == "ctrl+g" {
+		cfg.Keys.GroupInfo = ""
+	}
+	fill(&cfg.Keys.Stop, def.Keys.Stop)
+	fill(&cfg.Keys.Leave, def.Keys.Leave)
 	fill(&cfg.Keys.SendNow, def.Keys.SendNow)
 	fill(&cfg.Keys.Activity, def.Keys.Activity)
-	fill(&cfg.Keys.GroupInfo, def.Keys.GroupInfo)
 	fill(&cfg.Keys.CleanDisk, def.Keys.CleanDisk)
 	fill(&cfg.Keys.Complete, def.Keys.Complete)
 	if cfg.MaxAgentTurns <= 0 {
