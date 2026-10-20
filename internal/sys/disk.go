@@ -64,5 +64,24 @@ func HasMole() bool {
 	return err == nil
 }
 
-// MoleClean é o comando que abre a limpeza do Mole no terminal.
+// MoleClean é o comando da limpeza do Mole, pra rodar no lugar do bot.
 func MoleClean() *exec.Cmd { return exec.Command("mo", "clean") }
+
+// OpenMole abre a limpeza do Mole numa janela nova do mesmo app de
+// terminal que você está usando, pro bot continuar aberto.
+func OpenMole() error {
+	var script string
+	switch os.Getenv("TERM_PROGRAM") {
+	case "iTerm.app":
+		script = `tell application "iTerm"
+	activate
+	create window with default profile command "mo clean"
+end tell`
+	default:
+		script = `tell application "Terminal"
+	activate
+	do script "mo clean"
+end tell`
+	}
+	return exec.Command("osascript", "-e", script).Run()
+}

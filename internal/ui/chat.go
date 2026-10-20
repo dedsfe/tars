@@ -566,7 +566,7 @@ func (c *chatScreen) paintMentions(s string) string {
 		if m, ok := chat.Member(c.g, h); ok {
 			return at(m.Handle, m.Color)
 		}
-		if h == chat.Everyone || h == chat.Me() {
+		if h == chat.Everyone || h == chat.EveryoneEN || h == chat.Me() {
 			return sActive.Render(w)
 		}
 		return w

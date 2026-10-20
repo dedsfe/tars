@@ -33,7 +33,14 @@ type Disk struct {
 	WarnGB  float64 `toml:"warn_gb"`
 	PauseGB float64 `toml:"pause_gb"`
 	StopMB  float64 `toml:"stop_mb"`
+	Mole    string  `toml:"mole"` // "inside" ou "window"
 }
+
+// Onde a limpeza do Mole roda.
+const (
+	MoleInside = "inside" // no lugar do bot, que volta quando o Mole fecha
+	MoleWindow = "window" // numa janela nova do terminal, com o bot aberto
+)
 
 // Keys são os atalhos do chat, no formato do Bubble Tea ("ctrl+r", "alt+v"...).
 type Keys struct {
@@ -49,7 +56,7 @@ func Default() Config {
 	return Config{
 		NoMention: NoMentionLead,
 		Voice:     Voice{Enabled: true},
-		Disk:      Disk{WarnGB: 5, PauseGB: 2, StopMB: 500},
+		Disk:      Disk{WarnGB: 5, PauseGB: 2, StopMB: 500, Mole: MoleInside},
 		Keys: Keys{
 			Voice:     "ctrl+r",
 			Paste:     "ctrl+v",
@@ -80,6 +87,10 @@ microphone = ""
 warn_gb = 5    # barra fica amarela / bar turns yellow
 pause_gb = 2   # IAs param de começar trabalho novo / agents stop starting work
 stop_mb = 500  # quem está trabalhando é parado / running agents are stopped
+# Onde a limpeza do Mole abre: "inside" (no lugar do bot, que volta quando
+# você sai do Mole) ou "window" (janela nova, o bot continua aberto).
+# Where Mole cleanup opens: "inside" (bot comes back after) or "window".
+mole = "inside"
 
 [keys]
 voice = "ctrl+r"
@@ -123,6 +134,9 @@ func Load(dir string) (Config, error) {
 	}
 	if cfg.Disk.PauseGB <= 0 {
 		cfg.Disk.PauseGB = def.Disk.PauseGB
+	}
+	if cfg.Disk.Mole != MoleWindow {
+		cfg.Disk.Mole = MoleInside
 	}
 	if cfg.Disk.StopMB <= 0 {
 		cfg.Disk.StopMB = def.Disk.StopMB

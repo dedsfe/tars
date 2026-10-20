@@ -48,7 +48,7 @@ const (
 var handleRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,19}$`)
 
 // Apelidos que o chat vai usar pra outras coisas.
-var reservedHandles = map[string]bool{"todos": true, "eu": true}
+var reservedHandles = map[string]bool{"todos": true, "all": true, "eu": true}
 
 type wizardDoneMsg struct{ group store.Group }
 type wizardCancelMsg struct{}

@@ -44,9 +44,9 @@ type App struct {
 	before  uint64          // espaço livre antes de rodar o Mole
 }
 
-type moleDoneMsg struct{ err error }
-
 type usageMsg struct{}
+
+type moleDoneMsg struct{ err error }
 
 // watchUsage relê os limites a cada 30 segundos.
 func watchUsage(wait time.Duration) tea.Cmd {
@@ -147,9 +147,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		case a.cfg.Keys.CleanDisk:
 			if a.screen != screenWizard && sys.HasMole() {
-				// o bot sai da frente, o Mole roda no terminal e o bot volta
+				if a.cfg.Disk.Mole == config.MoleInside {
+					// o bot dá lugar ao Mole e volta quando você sai dele
+					a.before = sys.FreeDisk()
+					return a, tea.ExecProcess(sys.MoleClean(), func(err error) tea.Msg { return moleDoneMsg{err} })
+				}
+				// o Mole abre numa janela nova e o bot segue aqui, medindo o espaço
+				if err := sys.OpenMole(); err != nil {
+					a.flash = sError.Render("Não consegui abrir o Mole: " + err.Error())
+					return a, nil
+				}
 				a.before = sys.FreeDisk()
-				return a, tea.ExecProcess(sys.MoleClean(), func(err error) tea.Msg { return moleDoneMsg{err} })
+				a.flash = sMuted.Render("O Mole abriu numa janela nova. Conforme ele limpar, o espaço aparece aqui.")
+				return a, nil
 			}
 		}
 	case moleDoneMsg:
@@ -158,10 +168,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.err != nil:
 			a.flash = sError.Render("O Mole fechou com erro: " + msg.err.Error())
 		case after > a.before:
-			a.flash = sActive.Render("O Mole liberou " + sys.Size(after-a.before) + ".")
+			a.flash = sActive.Render("De volta ao bot. O Mole liberou " + sys.Size(after-a.before) + ".")
 		default:
-			a.flash = sMuted.Render("O Mole terminou, mas o espaço livre não aumentou.")
+			a.flash = sMuted.Render("De volta ao bot. O espaço livre não mudou.")
 		}
+		a.before = 0
 		return a, watchDisk(0)
 	case wizardCancelMsg:
 		a.screen, a.wiz = screenHome, nil
@@ -178,6 +189,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.openChat(g)
 	case diskMsg:
 		a.disk = uint64(msg)
+		if a.before != 0 && a.disk > a.before+100*sys.MB {
+			a.flash = sActive.Render("O Mole já liberou " + sys.Size(a.disk-a.before) + ".")
+		}
 		cmds := []tea.Cmd{watchDisk(5 * time.Second)}
 		for _, c := range a.chats {
 			cmds = append(cmds, c.setDisk(a.disk))

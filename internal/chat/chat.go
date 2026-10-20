@@ -14,8 +14,11 @@ import (
 	"bot/internal/store"
 )
 
-// Everyone é o @ que chama o grupo inteiro.
-const Everyone = "todos"
+// Everyone é o @ que chama o grupo inteiro; EveryoneEN faz o mesmo em inglês.
+const (
+	Everyone   = "todos"
+	EveryoneEN = "all"
+)
 
 // MaxAgentTurns limita quantas vezes as IAs falam entre si depois de
 // uma mensagem sua, pra conversa não virar loop infinito.
@@ -64,7 +67,7 @@ func asciiHandle(s string) string {
 // MentionsMe diz se o texto marca você.
 func MentionsMe(text string) bool {
 	for _, m := range mentionRe.FindAllStringSubmatch(text, -1) {
-		if h := strings.ToLower(m[1]); h == Me() || h == Everyone {
+		if h := strings.ToLower(m[1]); h == Me() || h == Everyone || h == EveryoneEN {
 			return true
 		}
 	}
@@ -96,7 +99,7 @@ func Mentions(text string, g store.Group, self string) []string {
 	}
 	for _, m := range mentionRe.FindAllStringSubmatch(text, -1) {
 		h := strings.ToLower(m[1])
-		if h == Everyone {
+		if h == Everyone || h == EveryoneEN {
 			for _, mem := range g.Members {
 				add(mem.Handle)
 			}

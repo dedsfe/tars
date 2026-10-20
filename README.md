@@ -1,31 +1,120 @@
 # bot
 
-Grupos de IAs de terminal (Claude, Codex, Gemini, Antigravity, Cursor, OpenCode, Ollama) que trabalham juntas.
+**Your terminal AIs, working together in a group chat.**
+Claude, Codex, Antigravity, Cursor, OpenCode and Ollama in the same room: they read the same conversation, tag each other with `@`, hand off work, and tag **you** when they need a decision.
+
+No Electron, no server, no account. One Go binary that drives the AI CLIs you already have installed.
+
+[Português](README.pt-BR.md)
 
 ```
-go build -o ~/.local/bin/bot . && bot
+ Site da padaria  @lead @dev @design
+ disco 41,2 GB livre  ·  Claude 34% 5h · Codex 12% semana
+
+ você @andre  14:02
+   landing page nova pra padaria, cores quentes, mobile primeiro
+
+ @lead  14:02
+   @design escolhe paleta e fontes. @dev monta a página em Next.js quando ela terminar.
+
+ @design  14:03
+   Paleta: #F4A261 casca, #2A1E17 café, #FFF8F0 farinha. Fontes: Fraunces + Inter.
+
+ @dev  14:05
+   Página pronta em app/page.tsx com a paleta. Rodei o build e passou.
+
+ @lead  14:05
+   @andre a primeira versão está pronta. Fotos dos produtos reais ou ilustração?
+
+ ⠙ @dev trabalhando 0:42
+ › Mensagem pro grupo
 ```
 
-## Estrutura
+> The interface is in Brazilian Portuguese for now. The AIs answer in whatever language you write in the group goal.
 
-- `main.go`: abre a tela.
-- `internal/engines`: descobre quais IAs estão instaladas e os modelos de cada uma.
-- `internal/store`: guarda cada grupo em `~/.bot/grupos/<id>.json` e a conversa em `<id>.chat.jsonl` (`BOT_DIR` troca a pasta).
-- `internal/chat`: quem responde cada mensagem (@, @todos ou o líder) e o texto que cada IA lê.
-- `internal/engines/run.go`: roda cada IA sem interface, no modo seguro dela.
-- `internal/ui`: telas (lista de grupos, criação de grupo em 5 passos, detalhe do grupo).
+## Why
 
-## Criação de grupo
+Each AI is good at something different. Instead of copy-pasting between five terminal tabs, you create a group once, give each AI a role, and talk to all of them in one place.
 
-1. Objetivo: nome, objetivo (todas as IAs leem) e pasta de trabalho.
-2. Quem entra: IAs instaladas; `+` coloca mais de uma igual.
-3. Perfis: apelido (@), função, modelo, cor e acesso (só a pasta ou Mac inteiro).
-4. Líder: recebe mensagens sem @ e divide o trabalho.
-5. Revisão.
+## Features
 
-## Chat
+- **Group setup in 5 steps**: goal (every AI reads it), who joins, each AI's profile (`@handle`, role, model, color, access), the lead, review.
+- **@ mentions everywhere**: `@dev do X` wakes only `@dev`; `@all` (or `@todos`) wakes everyone; no mention goes to the lead (or to everyone, if you prefer).
+- **AIs tag each other**: whoever delegates is called back automatically with the result. A loop guard stops after 12 AI turns in a row.
+- **They tag you**: you get a macOS notification and a badge on the group list.
+- **Two access levels per AI**: only the group's folder (safe mode of each CLI) or the whole Mac, which skips every permission prompt *by your explicit choice*. With [cua-driver](https://github.com/trycua/cua) they can also drive the browser and native apps in the background.
+- **Images**: drag a file into the terminal or press `ctrl+v` with a screenshot copied.
+- **Voice**: `ctrl+r` records and transcribes locally with Whisper. Nothing leaves your Mac. Optional, downloaded on first use.
+- **Plan limits on screen**: Claude and Codex usage (5h and weekly windows), Antigravity tokens per day. Agents that hit a limit wait and resume on their own.
+- **Disk guard**: pauses the AIs before your disk fills up, and offers a cleanup with [Mole](https://github.com/tw93/Mole) when it gets tight.
+- **Everything in plain files** under `~/.bot`: one JSON per group, one JSONL per conversation.
 
-- Sem @ quem responde é o líder. `@apelido` chama alguém, `@todos` chama todo mundo.
-- As IAs se marcam do mesmo jeito. Quem delega é chamado de volta quando o outro termina.
-- Máximo de 12 falas seguidas das IAs por mensagem sua, pra não virar loop.
-- `ctrl+g` mostra o grupo, `ctrl+x` para todo mundo, `esc` sai e elas continuam trabalhando.
+## Install
+
+Requires macOS, Go 1.25+ and at least one AI CLI logged in (`claude`, `codex`, `agy`, `cursor-agent`, `opencode` or `ollama`).
+
+```sh
+go install github.com/dedsfe/bot@latest
+bot
+```
+
+Optional extras:
+
+```sh
+brew install ffmpeg whisper-cpp   # voice (bot offers to install it on first ctrl+r)
+brew install mole                 # disk cleanup
+```
+
+## Keys
+
+| Key | Action |
+| --- | --- |
+| `enter` | send (`alt+enter` for a new line) |
+| `tab` | complete the `@` you're typing |
+| `ctrl+r` | talk (press again to transcribe) |
+| `ctrl+v` | paste a copied screenshot |
+| `ctrl+x` | stop everyone |
+| `ctrl+g` | show the group |
+| `ctrl+l` | clean the disk with Mole |
+| `esc` | leave the chat (AIs keep working) |
+
+Every shortcut can be changed in `~/.bot/config.toml`, created on first run with comments:
+
+```toml
+no_mention = "lead"   # or "all": who answers when you tag nobody
+
+[voice]
+enabled = true
+
+[disk]
+warn_gb = 5
+pause_gb = 2
+mole = "inside"       # or "window": run Mole in place of bot, or in a new window
+
+[keys]
+voice = "ctrl+r"
+```
+
+## How it works
+
+Each turn runs the AI's CLI headless (`claude -p`, `codex exec`, `agy -p`...) inside the group folder, with a prompt that holds the group goal, its role, the members and the last messages. The reply goes back to the chat, and any `@` in it wakes the next AI. No AI keeps hidden state: the conversation is the memory, so every member sees the same thing.
+
+```
+internal/
+  engines/   detects installed CLIs and runs each one headless
+  chat/      who answers, mentions, and the prompt each AI reads
+  store/     groups and conversations on disk
+  usage/     plan limits (Claude events, Codex session logs)
+  voice/     recording (ffmpeg) and local transcription (whisper.cpp)
+  attach/    images dropped or pasted into the chat
+  config/    ~/.bot/config.toml
+  ui/        terminal screens (Bubble Tea)
+```
+
+## Safety
+
+"Whole Mac" access runs each CLI with its own skip-permissions flag (`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox`...). Only choose it for AIs and groups you trust. The default is the group folder only.
+
+## License
+
+MIT
