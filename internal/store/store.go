@@ -126,6 +126,13 @@ type Message struct {
 	Text  string    `json:"text"`
 	At    time.Time `json:"at"`
 	Error bool      `json:"error,omitempty"`
+	// Images são cópias das imagens anexadas, na pasta de anexos do grupo.
+	Images []string `json:"images,omitempty"`
+}
+
+// Attachments é a pasta onde ficam as imagens mandadas no grupo.
+func (s *Store) Attachments(groupID string) string {
+	return filepath.Join(s.Root(), "anexos", groupID)
 }
 
 // System é o remetente dos avisos do próprio bot.

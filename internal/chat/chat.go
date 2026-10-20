@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -157,6 +158,13 @@ func Prompt(g store.Group, me store.Member, calledBy string, history []store.Mes
 	b.WriteString("\nCONVERSA ATÉ AGORA\n")
 	b.WriteString(transcript(history))
 
+	if imgs := Images(history); len(imgs) > 0 {
+		b.WriteString("\nIMAGENS DA CONVERSA (abra com sua ferramenta de ler arquivos quando forem úteis)\n")
+		for _, img := range imgs {
+			fmt.Fprintf(&b, "- %s\n", img)
+		}
+	}
+
 	fmt.Fprintf(&b, "\nAgora é sua vez, @%s.", me.Handle)
 	if calledBy != "" {
 		fmt.Fprintf(&b, " Quem te chamou: %s.", calledBy)
@@ -173,7 +181,11 @@ func transcript(history []store.Message) string {
 	var lines []string
 	total := 0
 	for i := len(history) - 1; i >= 0; i-- {
-		line := "[" + Speaker(history[i].From) + "] " + clip(history[i].Text, messageChars)
+		text := history[i].Text
+		for _, img := range history[i].Images {
+			text += " [anexou a imagem " + filepath.Base(img) + "]"
+		}
+		line := "[" + Speaker(history[i].From) + "] " + clip(text, messageChars)
 		if total+len(line) > historyChars {
 			break
 		}
@@ -184,6 +196,23 @@ func transcript(history []store.Message) string {
 		return "(vazia)\n"
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// MaxImages é quantas imagens recentes cada IA recebe junto da conversa.
+const MaxImages = 4
+
+// Images são as imagens mais recentes da conversa que ainda existem no disco.
+func Images(history []store.Message) []string {
+	var out []string
+	for i := len(history) - 1; i >= 0 && len(out) < MaxImages; i-- {
+		imgs := history[i].Images
+		for j := len(imgs) - 1; j >= 0 && len(out) < MaxImages; j-- {
+			if _, err := os.Stat(imgs[j]); err == nil {
+				out = append([]string{imgs[j]}, out...)
+			}
+		}
+	}
+	return out
 }
 
 // Speaker é como cada remetente aparece na conversa.

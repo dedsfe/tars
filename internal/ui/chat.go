@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"bot/internal/attach"
 	"bot/internal/chat"
 	"bot/internal/engines"
 	"bot/internal/store"
@@ -161,6 +163,15 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 			var cmd tea.Cmd
 			c.vp, cmd = c.vp.Update(msg)
 			return c, cmd, false
+		case "ctrl+v":
+			// cola um print copiado como imagem anexada
+			path, err := attach.Clipboard(c.st.Attachments(c.g.ID))
+			if err != nil {
+				c.err = "Não tem imagem copiada. Tira um print com cmd+ctrl+shift+4 ou arrasta o arquivo pra cá."
+				return c, nil, false
+			}
+			c.input.InsertString(path + " ")
+			return c, nil, false
 		case "tab":
 			c.complete()
 			return c, nil, false
@@ -185,9 +196,19 @@ func (c *chatScreen) send(text string) tea.Cmd {
 		c.err = "A pasta do grupo não existe mais: " + tildify(c.g.Folder)
 		return nil
 	}
-	c.post(store.Message{Text: text})
+	clean, paths := attach.Extract(text)
+	var images []string
+	for _, p := range paths {
+		saved, err := attach.Save(p, c.st.Attachments(c.g.ID))
+		if err != nil {
+			c.err = "Não consegui anexar " + filepath.Base(p) + ": " + err.Error()
+			return nil
+		}
+		images = append(images, saved)
+	}
+	c.post(store.Message{Text: clean, Images: images})
 	c.root++
-	for _, h := range chat.Targets(text, c.g) {
+	for _, h := range chat.Targets(clean, c.g) {
 		c.enqueue(job{handle: h, by: "você", root: c.root})
 	}
 	return c.pump()
@@ -258,6 +279,7 @@ func (c *chatScreen) turn(j job) tea.Cmd {
 		Folder:     c.g.Folder,
 		FullAccess: me.FullAccess,
 		Prompt:     chat.Prompt(c.g, me, j.by, append([]store.Message(nil), c.msgs...)),
+		Images:     chat.Images(c.msgs),
 	}
 	ctx, groupID := c.ctx, c.g.ID
 	return func() tea.Msg {
@@ -419,6 +441,9 @@ func (c *chatScreen) renderMessages() string {
 		}
 		b.WriteString(c.speaker(m.From) + "  " + sFaint.Render(m.At.Format("15:04")) + "\n")
 		body := lipgloss.NewStyle().Width(width).Render(m.Text)
+		if m.Text == "" {
+			body = ""
+		}
 		switch {
 		case m.Error:
 			body = sError.Render(lipgloss.NewStyle().Width(width).Render("não consegui responder: " + m.Text))
@@ -427,7 +452,12 @@ func (c *chatScreen) renderMessages() string {
 		default:
 			body = c.paintMentions(body)
 		}
-		b.WriteString(indent(body, "  ") + "\n")
+		if body != "" {
+			b.WriteString(indent(body, "  ") + "\n")
+		}
+		for _, img := range m.Images {
+			b.WriteString("  " + sMuted.Render("imagem ") + sText.Render(filepath.Base(img)) + "\n")
+		}
 	}
 	return b.String()
 }
@@ -507,12 +537,19 @@ func (c *chatScreen) View() string {
 		}
 		hint = sMuted.Render("tab completa  ") + strings.Join(names, " ")
 	}
+	if _, imgs := attach.Extract(c.input.Value()); len(imgs) > 0 && hint == "" {
+		word := "imagem pronta"
+		if len(imgs) > 1 {
+			word = "imagens prontas"
+		}
+		hint = sActive.Render(fmt.Sprintf("%d %s pra enviar", len(imgs), word))
+	}
 	if c.err != "" {
 		hint = sError.Render(c.err)
 	}
 	b.WriteString(hint + "\n")
 
-	help := "enter envia · @ marca alguém · pgup/pgdn rola · ctrl+g ver grupo · esc sai"
+	help := "enter envia · @ marca alguém · ctrl+v cola print · ctrl+g ver grupo · esc sai"
 	if c.busy() {
 		help = "enter envia · ctrl+x para todo mundo · ctrl+g ver grupo · esc sai (eles continuam)"
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -32,6 +33,8 @@ type Turn struct {
 	// FullAccess é o "Mac inteiro" que você escolheu no perfil da IA:
 	// ela roda sem pedir permissão pra nada.
 	FullAccess bool
+	// Images são imagens da conversa que a IA deve conseguir abrir.
+	Images []string
 }
 
 // Run roda a IA sem interface e devolve a resposta final dela.
@@ -123,6 +126,9 @@ func command(t Turn) (args []string, outFile string, err error) {
 	switch t.Engine {
 	case "claude":
 		args = []string{"-p", t.Prompt, "--output-format", "stream-json", "--verbose"}
+		for _, d := range dirs(t.Images) {
+			args = append(args, "--add-dir="+d)
+		}
 		if t.FullAccess {
 			args = append(args, "--dangerously-skip-permissions")
 		} else {
@@ -139,6 +145,9 @@ func command(t Turn) (args []string, outFile string, err error) {
 		f.Close()
 		outFile = f.Name()
 		args = []string{"exec", "--skip-git-repo-check", "-C", t.Folder, "-o", outFile}
+		for _, img := range t.Images {
+			args = append(args, "--image="+img)
+		}
 		if t.FullAccess {
 			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 		} else {
@@ -150,6 +159,9 @@ func command(t Turn) (args []string, outFile string, err error) {
 		args = append(args, t.Prompt)
 	case "agy":
 		args = []string{"-p", t.Prompt, "--output-format", "text", "--add-dir", t.Folder}
+		for _, d := range dirs(t.Images) {
+			args = append(args, "--add-dir", d)
+		}
 		if t.FullAccess {
 			args = append(args, "--dangerously-skip-permissions")
 		} else {
@@ -169,6 +181,9 @@ func command(t Turn) (args []string, outFile string, err error) {
 		args = append(args, t.Prompt)
 	case "opencode":
 		args = []string{"run", "--dir", t.Folder}
+		for _, img := range t.Images {
+			args = append(args, "--file="+img)
+		}
 		if model != "" {
 			args = append(args, "-m", model)
 		}
@@ -182,6 +197,19 @@ func command(t Turn) (args []string, outFile string, err error) {
 		return nil, "", fmt.Errorf("não sei rodar %q", t.Engine)
 	}
 	return args, outFile, nil
+}
+
+// dirs são as pastas das imagens, sem repetir.
+func dirs(images []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, img := range images {
+		if d := filepath.Dir(img); !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 var ansi = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
