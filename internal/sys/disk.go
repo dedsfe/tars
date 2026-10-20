@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/dedsfe/tars/internal/i18n"
 )
 
 const (
@@ -53,7 +55,7 @@ func FreeDisk() uint64 {
 // Size escreve bytes do jeito brasileiro: "1,3 GB", "450 MB".
 func Size(b uint64) string {
 	if b >= GB {
-		return strings.Replace(fmt.Sprintf("%.1f GB", float64(b)/GB), ".", ",", 1)
+		return strings.Replace(fmt.Sprintf("%.1f GB", float64(b)/GB), ".", i18n.Decimal(), 1)
 	}
 	return fmt.Sprintf("%d MB", b/MB)
 }

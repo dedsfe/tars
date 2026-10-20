@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"github.com/dedsfe/tars/internal/chat"
 	"github.com/dedsfe/tars/internal/config"
 	"github.com/dedsfe/tars/internal/engines"
+	"github.com/dedsfe/tars/internal/i18n"
 	"github.com/dedsfe/tars/internal/store"
 	"github.com/dedsfe/tars/internal/sys"
 	"github.com/dedsfe/tars/internal/usage"
@@ -113,12 +115,12 @@ func newChat(st *store.Store, g store.Group, list []engines.Engine, width, heigh
 
 	msgs, err := st.Messages(g.ID)
 	if err != nil {
-		c.err = "Não consegui ler a conversa: " + err.Error()
+		c.err = i18n.T("Could not read the chat: %v", err)
 	}
 	c.msgs = msgs
 
 	c.input = textarea.New()
-	c.input.Placeholder = "Mensagem pro grupo"
+	c.input.Placeholder = i18n.T("Message the group")
 	c.input.ShowLineNumbers = false
 	c.input.SetPromptFunc(2, func(line int) string {
 		if line == 0 {
@@ -164,7 +166,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		return c, c.finish(msg), false
 	case voiceToolsDoneMsg:
 		if msg.err != nil || len(voice.MissingTools()) > 0 {
-			c.err = "A instalação não terminou. Tenta de novo com " + c.cfg.Keys.Voice + "."
+			c.err = i18n.T("Setup did not finish. Try again with %s.", c.cfg.Keys.Voice)
 			return c, nil, false
 		}
 		return c, c.toggleVoice(), false
@@ -174,7 +176,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 	case modelDoneMsg:
 		c.dl = nil
 		if msg.err != nil {
-			c.err = "Não consegui baixar o modelo: " + msg.err.Error()
+			c.err = i18n.T("Could not download the model: %v", msg.err)
 			return c, nil, false
 		}
 		c.err = ""
@@ -182,7 +184,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 	case voiceDoneMsg:
 		c.transcribing = false
 		if msg.err != nil {
-			c.err = "Não consegui transcrever: " + msg.err.Error()
+			c.err = i18n.T("Could not transcribe: %v", msg.err)
 			return c, nil, false
 		}
 		v := c.input.Value()
@@ -250,7 +252,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 			// cola um print copiado como imagem anexada
 			path, err := attach.Clipboard(c.st.Attachments(c.g.ID))
 			if err != nil {
-				c.err = "Não tem imagem copiada. Tira um print com cmd+ctrl+shift+4 ou arrasta o arquivo pra cá."
+				c.err = i18n.T("No image copied. Take a screenshot with cmd+ctrl+shift+4 or drag a file here.")
 				return c, nil, false
 			}
 			c.input.InsertString(path + " ")
@@ -276,7 +278,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 
 func (c *chatScreen) send(text string) tea.Cmd {
 	if info, err := os.Stat(c.g.Folder); err != nil || !info.IsDir() {
-		c.err = "A pasta do grupo não existe mais: " + tildify(c.g.Folder)
+		c.err = i18n.T("The group folder is gone: %s", tildify(c.g.Folder))
 		return nil
 	}
 	clean, paths := attach.Extract(text)
@@ -284,7 +286,7 @@ func (c *chatScreen) send(text string) tea.Cmd {
 	for _, p := range paths {
 		saved, err := attach.Save(p, c.st.Attachments(c.g.ID))
 		if err != nil {
-			c.err = "Não consegui anexar " + filepath.Base(p) + ": " + err.Error()
+			c.err = i18n.T("Could not attach %s: %v", filepath.Base(p), err)
 			return nil
 		}
 		images = append(images, saved)
@@ -292,7 +294,7 @@ func (c *chatScreen) send(text string) tea.Cmd {
 	c.post(store.Message{Text: clean, Images: images})
 	c.root++
 	for _, h := range chat.Targets(clean, c.g, c.cfg.NoMention == config.NoMentionAll) {
-		c.enqueue(job{handle: h, by: "você", root: c.root})
+		c.enqueue(job{handle: h, by: "@" + chat.Me() + " (the human)", root: c.root})
 	}
 	return c.pump()
 }
@@ -311,13 +313,13 @@ func (c *chatScreen) pump() tea.Cmd {
 	if c.disk != 0 && c.disk < sys.DiskPause && len(c.queue) > 0 {
 		if !c.diskPaused {
 			c.diskPaused = true
-			text := fmt.Sprintf("O disco está com %s livre. Pausei as IAs até ter pelo menos %s, pra não travar o Mac. Elas voltam sozinhas quando liberar espaço.",
+			text := i18n.T("The disk has %s free. AIs are paused until at least %s is free, to keep your Mac running. They resume when space is freed.",
 				sys.Size(c.disk), sys.Size(sys.DiskPause))
 			if sys.HasMole() {
-				text += " Aperta " + c.cfg.Keys.CleanDisk + " pra limpar com o Mole."
+				text += i18n.T(" Press %s to clean with Mole.", c.cfg.Keys.CleanDisk)
 			}
 			c.post(store.Message{From: store.System, Text: text})
-			chat.Notify(c.g.Name, "IAs pausadas", "Disco com "+sys.Size(c.disk)+" livre.")
+			chat.Notify(c.g.Name, i18n.T("AIs paused"), i18n.T("Disk has %s free.", sys.Size(c.disk)))
 		}
 		c.refresh(true)
 		return nil
@@ -330,8 +332,8 @@ func (c *chatScreen) pump() tea.Cmd {
 		case c.budget[j.root] >= chat.MaxAgentTurns:
 			if !stopped[j.root] {
 				stopped[j.root] = true
-				c.post(store.Message{From: store.System, Text: fmt.Sprintf(
-					"As IAs já falaram %d vezes seguidas. Parei aqui pra não virar loop. Manda uma mensagem pra continuar.",
+				c.post(store.Message{From: store.System, Text: i18n.T(
+					"AIs have spoken %d times in a row. Stopped here to avoid a loop. Send a message to continue.",
 					chat.MaxAgentTurns)})
 			}
 		case c.isRunning(j.handle):
@@ -393,11 +395,11 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 	done := c.running[m.handle]
 	delete(c.running, m.handle)
 	switch {
-	case m.err != nil && m.err.Error() == "parado":
+	case errors.Is(m.err, engines.ErrStopped):
 		if c.stopWhy != "" {
-			c.post(store.Message{From: store.System, Text: "Parei @" + m.handle + " " + c.stopWhy + "."})
+			c.post(store.Message{From: store.System, Text: i18n.T("Stopped @%s %s.", m.handle, c.stopWhy)})
 		} else {
-			c.post(store.Message{From: store.System, Text: "Você parou @" + m.handle + "."})
+			c.post(store.Message{From: store.System, Text: i18n.T("You stopped @%s.", m.handle)})
 		}
 		if len(c.running) == 0 {
 			c.stopWhy = ""
@@ -407,7 +409,7 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 	default:
 		c.post(store.Message{From: m.handle, Text: m.text})
 		if chat.MentionsMe(m.text) {
-			chat.Notify(c.g.Name, "@"+m.handle+" te marcou", m.text)
+			chat.Notify(c.g.Name, i18n.T("@%s mentioned you", m.handle), m.text)
 			if !c.visible {
 				c.pinged = true
 			}
@@ -418,7 +420,7 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 		}
 		// quem pediu algo pra outra IA é chamado de volta com o resultado
 		if done.caller != "" && !done.reply && !slices.Contains(called, done.caller) {
-			c.enqueue(job{handle: done.caller, by: "@" + m.handle + " (respondendo ao que você pediu)",
+			c.enqueue(job{handle: done.caller, by: "@" + m.handle + " (replying to your request)",
 				caller: m.handle, reply: true, root: done.root})
 		}
 	}
@@ -432,7 +434,7 @@ func (c *chatScreen) setDisk(free uint64) tea.Cmd {
 		return nil
 	}
 	if free < sys.DiskKill && len(c.running) > 0 && c.stopWhy == "" {
-		c.stopWhy = "porque o disco ficou com " + sys.Size(free) + " livre"
+		c.stopWhy = i18n.T("because the disk has %s free", sys.Size(free))
 		for _, j := range c.running {
 			c.enqueue(j) // volta pra fila e continua quando liberar
 		}
@@ -442,7 +444,7 @@ func (c *chatScreen) setDisk(free uint64) tea.Cmd {
 	}
 	if c.diskPaused && free >= sys.DiskPause {
 		c.diskPaused = false
-		c.post(store.Message{From: store.System, Text: "Espaço liberado (" + sys.Size(free) + "). As IAs voltaram."})
+		c.post(store.Message{From: store.System, Text: i18n.T("Space freed (%s). AIs are back.", sys.Size(free))})
 		return c.pump()
 	}
 	return nil
@@ -462,7 +464,7 @@ func (c *chatScreen) post(m store.Message) {
 	m.At = time.Now()
 	c.msgs = append(c.msgs, m)
 	if err := c.st.Append(c.g.ID, m); err != nil {
-		c.err = "Não consegui salvar a conversa: " + err.Error()
+		c.err = i18n.T("Could not save the chat: %v", err)
 	}
 	c.refresh(true)
 }
@@ -483,8 +485,8 @@ func (c *chatScreen) suggestions() []store.Member {
 			out = append(out, mem)
 		}
 	}
-	if strings.HasPrefix(chat.Everyone, m[1]) {
-		out = append(out, store.Member{Handle: chat.Everyone, Color: string(cMuted.Dark)})
+	if all := chat.EveryoneHandle(); strings.HasPrefix(all, m[1]) {
+		out = append(out, store.Member{Handle: all, Color: string(cMuted.Dark)})
 	}
 	return out
 }
@@ -513,8 +515,7 @@ func (c *chatScreen) refresh(follow bool) {
 func (c *chatScreen) renderMessages() string {
 	if len(c.msgs) == 0 {
 		lead, _ := chat.Member(c.g, c.g.Lead)
-		return sMuted.Render("Manda a primeira mensagem. Sem @ quem responde é ") +
-			at(lead.Handle, lead.Color) + sMuted.Render(". Use @todos pra chamar todo mundo.")
+		return sMuted.Render(i18n.T("Send the first message. Without @, %s replies. Use %s to call everyone.", at(lead.Handle, lead.Color), "@"+chat.EveryoneHandle()))
 	}
 	width := max(10, c.vp.Width-2)
 	var b strings.Builder
@@ -529,7 +530,7 @@ func (c *chatScreen) renderMessages() string {
 		}
 		switch {
 		case m.Error:
-			body = sError.Render(lipgloss.NewStyle().Width(width).Render("não consegui responder: " + m.Text))
+			body = sError.Render(lipgloss.NewStyle().Width(width).Render(i18n.T("could not reply: %s", m.Text)))
 		case m.From == store.System:
 			body = sMuted.Italic(true).Render(body)
 		default:
@@ -539,7 +540,7 @@ func (c *chatScreen) renderMessages() string {
 			b.WriteString(indent(body, "  ") + "\n")
 		}
 		for _, img := range m.Images {
-			b.WriteString("  " + sMuted.Render("imagem ") + sText.Render(filepath.Base(img)) + "\n")
+			b.WriteString("  " + sMuted.Render(i18n.T("image ")) + sText.Render(filepath.Base(img)) + "\n")
 		}
 	}
 	return b.String()
@@ -548,7 +549,7 @@ func (c *chatScreen) renderMessages() string {
 func (c *chatScreen) speaker(from string) string {
 	switch from {
 	case "":
-		return sTitle.Render("você") + sFaint.Render(" @"+chat.Me())
+		return sTitle.Render(i18n.T("you")) + sFaint.Render(" @"+chat.Me())
 	case store.System:
 		return sMuted.Render("tars")
 	}
@@ -593,7 +594,7 @@ func (c *chatScreen) toggleVoice() tea.Cmd {
 		}
 		rec, err := voice.Record(filepath.Join(root, "audio"))
 		if err != nil {
-			c.err = "Não consegui gravar: " + err.Error()
+			c.err = i18n.T("Could not record: %v", err)
 			return nil
 		}
 		c.rec = rec
@@ -602,7 +603,7 @@ func (c *chatScreen) toggleVoice() tea.Cmd {
 	wav, err := c.rec.Stop()
 	c.rec = nil
 	if err != nil {
-		c.err = "Não consegui gravar: " + err.Error()
+		c.err = i18n.T("Could not record: %v", err)
 		return nil
 	}
 	c.transcribing = true
@@ -625,7 +626,7 @@ func (c *chatScreen) confirmVoiceSetup() tea.Cmd {
 	switch step {
 	case "tools":
 		if _, err := exec.LookPath("brew"); err != nil {
-			c.err = "Precisa do Homebrew (brew.sh) pra instalar: " + strings.Join(voice.MissingTools(), " ")
+			c.err = i18n.T("Homebrew (brew.sh) is needed to install: %s", strings.Join(voice.MissingTools(), " "))
 			return nil
 		}
 		args := append([]string{"install"}, voice.MissingTools()...)
@@ -668,29 +669,28 @@ func (c *chatScreen) status() string {
 	var parts []string
 	if c.rec != nil {
 		d := time.Since(c.rec.Start).Round(time.Second)
-		parts = append(parts, sError.Render(fmt.Sprintf("● gravando %d:%02d", int(d.Minutes()), int(d.Seconds())%60))+
-			sMuted.Render("  "+c.cfg.Keys.Voice+" termina · esc descarta"))
+		parts = append(parts, sError.Render(i18n.T("● recording %d:%02d", int(d.Minutes()), int(d.Seconds())%60))+
+			sMuted.Render(i18n.T("  %s finishes · esc discards", c.cfg.Keys.Voice)))
 	}
 	if c.transcribing {
-		parts = append(parts, c.spin.View()+sMuted.Render(" transcrevendo sua voz"))
+		parts = append(parts, c.spin.View()+sMuted.Render(i18n.T(" transcribing your voice")))
 	}
 	if c.dl != nil {
-		parts = append(parts, c.spin.View()+sMuted.Render(" baixando o modelo de voz ")+
+		parts = append(parts, c.spin.View()+sMuted.Render(i18n.T(" downloading the voice model "))+
 			progressBar(c.dlDone, c.dlTotal, 20)+sMuted.Render(" "+sys.Size(uint64(c.dlDone))))
 	}
 	switch c.voiceSetup {
 	case "tools":
-		parts = append(parts, sActive.Render("Pra ouvir sua voz falta instalar "+strings.Join(voice.MissingTools(), " e ")+
-			" pelo Homebrew.")+sMuted.Render("  enter instala · esc cancela"))
+		parts = append(parts, sActive.Render(i18n.T("To hear you, install %s with Homebrew.", strings.Join(voice.MissingTools(), i18n.T(" and "))))+sMuted.Render(i18n.T("  enter install · esc cancel")))
 	case "model":
-		parts = append(parts, sActive.Render("Pra ouvir sua voz o tars baixa o Whisper (~550 MB, roda só no seu Mac).")+
-			sMuted.Render("  enter baixa · esc cancela"))
+		parts = append(parts, sActive.Render(i18n.T("To hear you, tars downloads Whisper (~550 MB, runs only on your Mac)."))+
+			sMuted.Render(i18n.T("  enter download · esc cancel")))
 	}
 	for _, m := range c.g.Members {
 		if j, ok := c.running[m.Handle]; ok {
 			d := time.Since(j.start).Round(time.Second)
 			parts = append(parts, c.spin.View()+" "+at(m.Handle, m.Color)+
-				sMuted.Render(fmt.Sprintf(" trabalhando %d:%02d", int(d.Minutes()), int(d.Seconds())%60)))
+				sMuted.Render(i18n.T(" working %d:%02d", int(d.Minutes()), int(d.Seconds())%60)))
 		}
 	}
 	for _, j := range c.queue {
@@ -699,13 +699,13 @@ func (c *chatScreen) status() string {
 			continue
 		}
 		if reset, over := c.limitReset(j.handle); over {
-			parts = append(parts, at(m.Handle, m.Color)+sWarn.Render(" esperando o limite voltar ("+when(reset)+")"))
+			parts = append(parts, at(m.Handle, m.Color)+sWarn.Render(i18n.T(" waiting for the limit to reset (%s)", when(reset))))
 		} else {
-			parts = append(parts, at(m.Handle, m.Color)+sMuted.Render(" na fila"))
+			parts = append(parts, at(m.Handle, m.Color)+sMuted.Render(i18n.T(" queued")))
 		}
 	}
 	if c.diskPaused {
-		parts = append([]string{sError.Render("pausado: disco cheio")}, parts...)
+		parts = append([]string{sError.Render(i18n.T("paused: disk full"))}, parts...)
 	}
 	return strings.Join(parts, sFaint.Render("  ·  "))
 }
@@ -716,7 +716,7 @@ func (c *chatScreen) View() string {
 	b.WriteString(statusBar(c.disk, c.limits, c.engines) + "\n\n")
 	if c.showInfo {
 		b.WriteString(groupSummary(c.g, c.engines, c.vp.Width))
-		b.WriteString(sHelp.Render("esc volta pra conversa"))
+		b.WriteString(sHelp.Render(i18n.T("esc back to chat")))
 		return b.String()
 	}
 	b.WriteString(lipgloss.NewStyle().Height(c.vp.Height).Render(c.vp.View()) + "\n")
@@ -729,42 +729,56 @@ func (c *chatScreen) View() string {
 		for i, m := range s {
 			names[i] = at(m.Handle, m.Color)
 		}
-		hint = sMuted.Render("tab completa  ") + strings.Join(names, " ")
+		hint = sMuted.Render(i18n.T("tab complete  ")) + strings.Join(names, " ")
 	}
 	if _, imgs := attach.Extract(c.input.Value()); len(imgs) > 0 && hint == "" {
-		word := "imagem pronta"
+		word := "%d image ready to send"
 		if len(imgs) > 1 {
-			word = "imagens prontas"
+			word = "%d images ready to send"
 		}
-		hint = sActive.Render(fmt.Sprintf("%d %s pra enviar", len(imgs), word))
+		hint = sActive.Render(i18n.T(word, len(imgs)))
 	}
 	if c.err != "" {
 		hint = sError.Render(c.err)
 	}
 	b.WriteString(hint + "\n")
 
+	// do mais importante pro menos: o que não couber na largura fica de fora
 	k := c.cfg.Keys
-	keys := []string{"enter envia", "@ marca alguém"}
-	if c.busy() {
-		keys = []string{"enter envia", k.StopAll + " para todo mundo"}
-	} else {
-		if c.cfg.Voice.Enabled {
-			keys = append(keys, k.Voice+" fala")
-		}
-		keys = append(keys, k.Paste+" cola print")
-	}
-	keys = append(keys, k.GroupInfo+" ver grupo")
-	if c.busy() {
-		keys = append(keys, "esc sai (eles continuam)")
-	} else {
-		keys = append(keys, "esc sai")
-	}
-	help := strings.Join(keys, " · ")
+	var keys []string
 	if c.disk != 0 && c.disk < sys.DiskLow && sys.HasMole() {
-		help = sWarn.Render(k.CleanDisk+" limpa o disco com o Mole") + sMuted.Render(" · ") + help
+		keys = append(keys, sWarn.Render(i18n.T("%s clean disk (Mole)", k.CleanDisk)))
 	}
+	keys = append(keys, i18n.T("enter send"))
+	if c.busy() {
+		keys = append(keys, i18n.T("%s stop all", k.StopAll), i18n.T("esc leave (they keep working)"))
+	} else {
+		keys = append(keys, i18n.T("@ mention"), i18n.T("esc leave"))
+		if c.cfg.Voice.Enabled {
+			keys = append(keys, i18n.T("%s talk", k.Voice))
+		}
+		keys = append(keys, i18n.T("%s paste screenshot", k.Paste))
+	}
+	keys = append(keys, i18n.T("%s group info", k.GroupInfo))
+	help := fitKeys(keys, c.vp.Width)
 	b.WriteString(sHelp.Render(help))
 	return b.String()
+}
+
+// fitKeys junta os atalhos com " · " até onde a largura deixa.
+func fitKeys(keys []string, width int) string {
+	out := ""
+	for _, k := range keys {
+		next := k
+		if out != "" {
+			next = out + sMuted.Render(" · ") + k
+		}
+		if lipgloss.Width(next) > width {
+			break
+		}
+		out = next
+	}
+	return out
 }
 
 func progressBar(done, total int64, width int) string {

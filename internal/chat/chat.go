@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dedsfe/tars/internal/i18n"
 	"github.com/dedsfe/tars/internal/store"
 )
 
@@ -112,6 +113,16 @@ func Mentions(text string, g store.Group, self string) []string {
 	return out
 }
 
+// EveryoneHandle é o @ de todo mundo que a tela sugere no idioma atual
+// (os dois sempre funcionam).
+func EveryoneHandle() string {
+	switch i18n.Lang() {
+	case "pt", "es":
+		return Everyone
+	}
+	return EveryoneEN
+}
+
 // Targets diz quem responde a uma mensagem sua: os marcados ou, sem @,
 // o líder (ou todo mundo, se all).
 func Targets(text string, g store.Group, all bool) []string {
@@ -136,47 +147,48 @@ func Member(g store.Group, handle string) (store.Member, bool) {
 // Prompt é tudo que a IA lê na vez dela: quem ela é, o grupo e a conversa.
 func Prompt(g store.Group, me store.Member, calledBy string, history []store.Message) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Você é @%s, membro de um grupo de chat chamado %q que roda no terminal.\n\n", me.Handle, g.Name)
-	fmt.Fprintf(&b, "OBJETIVO DO GRUPO\n%s\n\n", g.Goal)
-	fmt.Fprintf(&b, "SUA FUNÇÃO\n%s\n\n", me.Role)
+	fmt.Fprintf(&b, "You are @%s, a member of a terminal chat group called %q.\n\n", me.Handle, g.Name)
+	fmt.Fprintf(&b, "GROUP GOAL\n%s\n\n", g.Goal)
+	fmt.Fprintf(&b, "YOUR ROLE\n%s\n\n", me.Role)
 
-	b.WriteString("MEMBROS\n")
-	fmt.Fprintf(&b, "- @%s (o humano dono do grupo)\n", Me())
+	b.WriteString("MEMBERS\n")
+	fmt.Fprintf(&b, "- @%s (the human who owns the group)\n", Me())
 	for _, m := range g.Members {
 		lead := ""
 		if m.Handle == g.Lead {
-			lead = ", líder"
+			lead = ", leader"
 		}
 		fmt.Fprintf(&b, "- @%s (%s%s): %s\n", m.Handle, m.Engine, lead, oneLine(m.Role))
 	}
-	fmt.Fprintf(&b, "\nPASTA DE TRABALHO\n%s\n\n", g.Folder)
+	fmt.Fprintf(&b, "\nWORKING FOLDER\n%s\n\n", g.Folder)
 
-	b.WriteString("COMO O GRUPO FUNCIONA\n")
-	b.WriteString("- Fale como numa conversa de grupo: curto, direto, em português do Brasil.\n")
-	b.WriteString("- Faça o trabalho de verdade com suas ferramentas antes de dizer que fez. Diga o que fez e onde ficou.\n")
-	b.WriteString("- Pra pedir algo a outro membro, escreva @apelido e o pedido. Ele é acordado e lê a conversa.\n")
-	b.WriteString("- Só marque alguém quando precisar que ele faça algo. Nunca marque pra agradecer, concordar ou se despedir.\n")
-	fmt.Fprintf(&b, "- Pra falar com o humano, marque @%s: ele recebe um aviso no Mac. Marque ele quando precisar de uma decisão dele ou quando entregar algo que ele pediu.\n", Me())
-	b.WriteString("- Quando terminar sua parte e não precisar de ninguém, não marque ninguém.\n")
+	b.WriteString("HOW THE GROUP WORKS\n")
+	fmt.Fprintf(&b, "- Write your messages in %s.\n", i18n.LanguageName())
+	b.WriteString("- Talk like you are in a group chat: keep it short and direct.\n")
+	b.WriteString("- Do the actual work with your tools before saying it is done. Say what you did and where to find it.\n")
+	b.WriteString("- To ask another member for something, write @handle and your request. They will wake up and read the conversation.\n")
+	b.WriteString("- Only mention someone when you need them to do something. Never mention them just to say thanks, agree, or say goodbye.\n")
+	fmt.Fprintf(&b, "- To speak to the human, mention @%s: they get a notification on their Mac. Mention them when you need a decision or deliver something they requested.\n", Me())
+	b.WriteString("- When your part is done and you do not need anyone, do not mention anyone.\n")
 	if me.Handle == g.Lead {
-		b.WriteString("- Você é o líder: divida o trabalho marcando quem combina com cada parte, e no fim junte o resultado pra você (o humano).\n")
+		b.WriteString("- You are the leader: split up the work by mentioning the right person for each part, then bring the results together for the human.\n")
 	}
 
-	b.WriteString("\nCONVERSA ATÉ AGORA\n")
+	b.WriteString("\nCONVERSATION SO FAR\n")
 	b.WriteString(transcript(history))
 
 	if imgs := Images(history); len(imgs) > 0 {
-		b.WriteString("\nIMAGENS DA CONVERSA (abra com sua ferramenta de ler arquivos quando forem úteis)\n")
+		b.WriteString("\nCONVERSATION IMAGES (open with your file-reading tool when useful)\n")
 		for _, img := range imgs {
 			fmt.Fprintf(&b, "- %s\n", img)
 		}
 	}
 
-	fmt.Fprintf(&b, "\nAgora é sua vez, @%s.", me.Handle)
+	fmt.Fprintf(&b, "\nIt is your turn now, @%s.", me.Handle)
 	if calledBy != "" {
-		fmt.Fprintf(&b, " Quem te chamou: %s.", calledBy)
+		fmt.Fprintf(&b, " Called by: %s.", calledBy)
 	}
-	b.WriteString(" Responda só com a sua mensagem pro grupo.\n")
+	b.WriteString(" Reply only with your message to the group.\n")
 	return b.String()
 }
 
@@ -226,9 +238,9 @@ func Images(history []store.Message) []string {
 func Speaker(from string) string {
 	switch from {
 	case "":
-		return "@" + Me() + " (humano)"
+		return i18n.T("@%s (human)", Me())
 	case store.System:
-		return "aviso do tars"
+		return i18n.T("tars notice")
 	}
 	return "@" + from
 }

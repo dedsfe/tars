@@ -9,6 +9,7 @@ import (
 	"github.com/dedsfe/tars/internal/chat"
 	"github.com/dedsfe/tars/internal/config"
 	"github.com/dedsfe/tars/internal/engines"
+	"github.com/dedsfe/tars/internal/i18n"
 	"github.com/dedsfe/tars/internal/store"
 	"github.com/dedsfe/tars/internal/sys"
 	"github.com/dedsfe/tars/internal/usage"
@@ -70,7 +71,7 @@ func New(st *store.Store, list []engines.Engine, cfg config.Config) *App {
 func (a *App) reload() {
 	groups, err := a.store.List()
 	if err != nil {
-		a.err = "Não consegui ler os grupos: " + err.Error()
+		a.err = i18n.T("Could not read groups: %v", err)
 	}
 	a.groups = groups
 }
@@ -100,10 +101,10 @@ func (a *App) checkLimits() tea.Cmd {
 		a.warned[key] = true
 		name := id
 		if e, ok := engines.Find(a.engines, id); ok {
-			name = e.Name
+			name = engineName(e.Name)
 		}
-		text := fmt.Sprintf("%s já usou %.0f%% do limite (%s). Volta %s.", name, w.Used, w.Name, when(w.ResetsAt))
-		chat.Notify("tars", "Limite perto do fim", text)
+		text := i18n.T("%s has used %.0f%% of the limit (%s). Resets %s.", name, w.Used, windowText(w.Name), when(w.ResetsAt))
+		chat.Notify("tars", i18n.T("Limit nearly used up"), text)
 		for _, c := range a.chats {
 			for _, m := range c.g.Members {
 				if m.Engine == id {
@@ -154,11 +155,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				// o Mole abre numa janela nova e o tars segue aqui, medindo o espaço
 				if err := sys.OpenMole(); err != nil {
-					a.flash = sError.Render("Não consegui abrir o Mole: " + err.Error())
+					a.flash = sError.Render(i18n.T("Could not open Mole: %v", err))
 					return a, nil
 				}
 				a.before = sys.FreeDisk()
-				a.flash = sMuted.Render("O Mole abriu numa janela nova. Conforme ele limpar, o espaço aparece aqui.")
+				a.flash = sMuted.Render(i18n.T("Mole opened in a new window. Freed space will show up here."))
 				return a, nil
 			}
 		}
@@ -166,11 +167,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		after := sys.FreeDisk()
 		switch {
 		case msg.err != nil:
-			a.flash = sError.Render("O Mole fechou com erro: " + msg.err.Error())
+			a.flash = sError.Render(i18n.T("Mole closed with an error: %v", msg.err))
 		case after > a.before:
-			a.flash = sActive.Render("De volta ao tars. O Mole liberou " + sys.Size(after-a.before) + ".")
+			a.flash = sActive.Render(i18n.T("Back in tars. Mole freed %s.", sys.Size(after-a.before)))
 		default:
-			a.flash = sMuted.Render("De volta ao tars. O espaço livre não mudou.")
+			a.flash = sMuted.Render(i18n.T("Back in tars. Free space has not changed."))
 		}
 		a.before = 0
 		return a, watchDisk(0)
@@ -180,7 +181,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case wizardDoneMsg:
 		g := msg.group
 		if err := a.store.Save(&g); err != nil {
-			a.wiz.err = "Não consegui salvar: " + err.Error()
+			a.wiz.err = i18n.T("Could not save: %v", err)
 			return a, nil
 		}
 		a.reload()
@@ -190,7 +191,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diskMsg:
 		a.disk = uint64(msg)
 		if a.before != 0 && a.disk > a.before+100*sys.MB {
-			a.flash = sActive.Render("O Mole já liberou " + sys.Size(a.disk-a.before) + ".")
+			a.flash = sActive.Render(i18n.T("Mole has freed %s so far.", sys.Size(a.disk-a.before)))
 		}
 		cmds := []tea.Cmd{watchDisk(5 * time.Second)}
 		for _, c := range a.chats {
@@ -316,21 +317,21 @@ func (a *App) View() string {
 
 func (a *App) viewHome() string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render("tars") + sMuted.Render("  suas IAs trabalhando juntas") + "\n")
+	b.WriteString(sTitle.Render("tars") + sMuted.Render(i18n.T("  your AIs working together")) + "\n")
 	b.WriteString(statusBar(a.disk, a.limits, a.engines) + "\n\n")
 
 	b.WriteString(pointer(a.cursor == 0))
 	if a.cursor == 0 {
-		b.WriteString(sActive.Render("+ Novo grupo"))
+		b.WriteString(sActive.Render(i18n.T("+ New group")))
 	} else {
-		b.WriteString(sText.Render("+ Novo grupo"))
+		b.WriteString(sText.Render(i18n.T("+ New group")))
 	}
 	b.WriteString("\n")
 
 	if len(a.groups) == 0 {
-		b.WriteString("\n" + sMuted.Render("Nenhum grupo ainda. Monta o primeiro e escolhe quem entra.") + "\n")
+		b.WriteString("\n" + sMuted.Render(i18n.T("No groups yet. Create your first one and pick who joins.")) + "\n")
 	} else {
-		b.WriteString("\n" + sLabel.Render("Seus grupos") + "\n")
+		b.WriteString("\n" + sLabel.Render(i18n.T("Your groups")) + "\n")
 	}
 	for i, g := range a.groups {
 		on := a.cursor == i+1
@@ -341,9 +342,9 @@ func (a *App) viewHome() string {
 		line := pointer(on) + name + "  " + handles(g)
 		if c, ok := a.chats[g.ID]; ok {
 			if c.pinged {
-				line += sActive.Render("  te marcaram")
+				line += sActive.Render(i18n.T("  you were mentioned"))
 			} else if c.busy() {
-				line += sMuted.Render("  trabalhando")
+				line += sMuted.Render(i18n.T("  working"))
 			}
 		}
 		b.WriteString(line + "\n")
@@ -352,9 +353,12 @@ func (a *App) viewHome() string {
 	if a.err != "" {
 		b.WriteString("\n" + sError.Render(a.err))
 	}
-	help := sMuted.Render("↑↓ navega · enter abre · n novo grupo · q sai")
+	help := sMuted.Render(i18n.T("↑↓ navigate · enter open · n new group · q quit"))
+	if lipgloss.Width(help) > a.width-4 {
+		help = sMuted.Render(i18n.T("enter open · n new group · q quit"))
+	}
 	if a.disk != 0 && a.disk < sys.DiskLow && sys.HasMole() {
-		help = sWarn.Render(a.cfg.Keys.CleanDisk+" limpa o disco com o Mole") + sMuted.Render(" · ") + help
+		help = sWarn.Render(i18n.T("%s clean disk (Mole)", a.cfg.Keys.CleanDisk)) + sMuted.Render(" · ") + help
 	}
 	b.WriteString("\n" + sHelp.Render(help))
 	return b.String()
@@ -367,21 +371,21 @@ func groupSummary(g store.Group, list []engines.Engine, width int) string {
 	wrapRole := lipgloss.NewStyle().Width(max(18, width-2))
 
 	var b strings.Builder
-	b.WriteString(sLabel.Render("Objetivo") + "\n" + sText.Render(wrap.Render(g.Goal)) + "\n\n")
-	b.WriteString(sLabel.Render("Pasta  ") + sText.Render(tildify(g.Folder)) + "\n\n")
-	b.WriteString(sLabel.Render("Membros") + "\n")
+	b.WriteString(sLabel.Render(i18n.T("Goal")) + "\n" + sText.Render(wrap.Render(g.Goal)) + "\n\n")
+	b.WriteString(sLabel.Render(i18n.T("Folder  ")) + sText.Render(tildify(g.Folder)) + "\n\n")
+	b.WriteString(sLabel.Render(i18n.T("Members")) + "\n")
 	for _, m := range g.Members {
 		name := m.Engine
 		if e, ok := engines.Find(list, m.Engine); ok {
-			name = e.Name
+			name = engineName(e.Name)
 		}
 		model := m.Model
 		if model == "" {
 			model = engines.Default
 		}
-		line := at(m.Handle, m.Color) + sMuted.Render(fmt.Sprintf("  %s · %s · %s", name, model, accessText(m.FullAccess)))
+		line := at(m.Handle, m.Color) + sMuted.Render(fmt.Sprintf("  %s · %s · %s", name, modelText(model), accessText(m.FullAccess)))
 		if m.Handle == g.Lead {
-			line += sActive.Render("  líder")
+			line += sActive.Render(i18n.T("  leader"))
 		}
 		b.WriteString(line + "\n")
 		b.WriteString(indent(sText.Render(wrapRole.Render(m.Role)), "  ") + "\n")

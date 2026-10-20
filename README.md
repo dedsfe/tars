@@ -30,7 +30,7 @@ No Electron, no server, no account. One Go binary that drives the AI CLIs you al
  › Mensagem pro grupo
 ```
 
-> The interface is in Brazilian Portuguese for now. The AIs answer in whatever language you write in the group goal.
+> The interface speaks English, Portuguese, Spanish, French, German, Italian, Japanese and Chinese. It follows your Mac's language (or `language = "pt"` in the config), and the AIs reply in the same language.
 
 ## Why
 
@@ -47,6 +47,7 @@ Each AI is good at something different. Instead of copy-pasting between five ter
 - **Voice**: `ctrl+r` records and transcribes locally with Whisper. Nothing leaves your Mac. Optional, downloaded on first use.
 - **Plan limits on screen**: Claude and Codex usage (5h and weekly windows), Antigravity tokens per day. Agents that hit a limit wait and resume on their own.
 - **Disk guard**: pauses the AIs before your disk fills up, and offers a cleanup with [Mole](https://github.com/tw93/Mole) when it gets tight.
+- **8 languages**: English, Português, Español, Français, Deutsch, Italiano, 日本語 and 中文. The AIs answer in yours.
 - **Everything in plain files** under `~/.tars`: one JSON per group, one JSONL per conversation.
 
 ## Install
@@ -81,6 +82,7 @@ brew install mole                 # disk cleanup
 Every shortcut can be changed in `~/.tars/config.toml`, created on first run with comments:
 
 ```toml
+language = "auto"     # or en, pt, es, fr, de, it, ja, zh
 no_mention = "lead"   # or "all": who answers when you tag nobody
 
 [voice]
@@ -108,6 +110,7 @@ internal/
   voice/     recording (ffmpeg) and local transcription (whisper.cpp)
   attach/    images dropped or pasted into the chat
   config/    ~/.tars/config.toml
+  i18n/      the 8 interface languages
   ui/        terminal screens (Bubble Tea)
 ```
 

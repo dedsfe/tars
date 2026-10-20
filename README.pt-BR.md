@@ -22,6 +22,7 @@ Cada IA é boa numa coisa. Em vez de copiar e colar entre cinco abas, você cria
 - **Voz**: `ctrl+r` grava e transcreve no próprio Mac com o Whisper. Nada sai do seu computador. Opcional, baixado no primeiro uso.
 - **Limite do plano na tela**: uso do Claude e do Codex (janelas de 5h e da semana) e tokens do Antigravity no dia. Quem estoura o limite espera e volta sozinho.
 - **Proteção de disco**: pausa as IAs antes do disco lotar e oferece limpeza com o [Mole](https://github.com/tw93/Mole).
+- **8 idiomas**: English, Português, Español, Français, Deutsch, Italiano, 日本語 e 中文. A interface segue o idioma do seu Mac (ou `language = "pt"` no config) e as IAs respondem no mesmo idioma.
 - **Tudo em arquivos simples** em `~/.tars`: um JSON por grupo, um JSONL por conversa.
 
 ## Instalar

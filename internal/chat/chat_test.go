@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dedsfe/tars/internal/i18n"
 	"github.com/dedsfe/tars/internal/store"
 )
 
@@ -54,14 +55,27 @@ func TestTargets(t *testing.T) {
 func TestPrompt(t *testing.T) {
 	history := []store.Message{{Text: "oi"}, {From: "dev", Text: "fiz", Images: []string{"/x/print.png"}}}
 	p := Prompt(group, group.Members[0], "você", history)
-	for _, want := range []string{"Você é @chefe", "Fazer sites.", "Você é o líder", "@" + Me(), "[@dev] fiz [anexou a imagem print.png]"} {
+	for _, want := range []string{"You are @chefe", "Fazer sites.", "Write your messages in English.", "You are the leader", "@" + Me(), "[@dev] fiz [anexou a imagem print.png]"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt sem %q", want)
 		}
 	}
-	if strings.Contains(Prompt(group, group.Members[1], "@chefe", nil), "Você é o líder") {
+	if strings.Contains(Prompt(group, group.Members[1], "@chefe", nil), "You are the leader") {
 		t.Error("quem não é líder não deveria receber instrução de líder")
 	}
+	old := i18n.Lang()
+	t.Cleanup(func() { i18n.Set(old) })
+	for _, lang := range []string{"pt", "es", "fr", "de", "it", "ja", "zh"} {
+		i18n.Set(lang)
+		p := Prompt(group, group.Members[0], "@"+Me(), history)
+		if !strings.Contains(p, "Write your messages in "+i18n.LanguageName()+".") {
+			t.Errorf("%s: missing response language", lang)
+		}
+		if !strings.Contains(p, "[@dev] fiz [anexou a imagem print.png]") {
+			t.Errorf("%s: transcript changed", lang)
+		}
+	}
+
 }
 
 func TestTranscriptKeepsTheEnd(t *testing.T) {

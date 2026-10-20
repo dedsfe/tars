@@ -9,6 +9,7 @@ import (
 
 	"github.com/dedsfe/tars/internal/chat"
 	"github.com/dedsfe/tars/internal/engines"
+	"github.com/dedsfe/tars/internal/i18n"
 	"github.com/dedsfe/tars/internal/store"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -26,7 +27,7 @@ const (
 	stepReview
 )
 
-var stepNames = []string{"Objetivo", "Quem entra", "Perfis", "Líder", "Revisão"}
+var stepNames = []string{"Goal", "Who joins", "Profiles", "Leader", "Review"}
 
 // Campos do passo Objetivo.
 const (
@@ -87,9 +88,9 @@ type wizard struct {
 func newWizard(list []engines.Engine, width int) *wizard {
 	w := &wizard{engines: list, counts: make([]int, len(list))}
 
-	w.name = newInput("Ex.: Ads do Oração", 40)
+	w.name = newInput(i18n.T("E.g. Bakery landing page"), 40)
 	w.goal = textarea.New()
-	w.goal.Placeholder = "O que esse grupo vai fazer? Todas as IAs leem isso antes de responder."
+	w.goal.Placeholder = i18n.T("What will this group do? Every AI reads this before replying.")
 	w.goal.ShowLineNumbers = false
 	w.goal.Prompt = "  "
 	w.goal.CharLimit = 1000
@@ -97,7 +98,7 @@ func newWizard(list []engines.Engine, width int) *wizard {
 	w.goal.FocusedStyle.CursorLine = lipgloss.NewStyle()
 
 	cwd, _ := os.Getwd()
-	w.folder = newInput("Pasta onde as IAs trabalham", 300)
+	w.folder = newInput(i18n.T("Folder where AIs work"), 300)
 	w.folder.SetValue(tildify(cwd))
 
 	w.cursor = firstInstalled(list)
@@ -204,7 +205,7 @@ func (w *wizard) updateBasics(msg tea.Msg, key tea.KeyMsg, isKey bool) tea.Cmd {
 			}
 			if w.focus == fName {
 				if strings.TrimSpace(w.name.Value()) == "" {
-					w.err = "Dá um nome pro grupo."
+					w.err = i18n.T("Give the group a name.")
 					return nil
 				}
 				return w.focusBasics(fGoal)
@@ -248,25 +249,25 @@ func (w *wizard) focusBasics(f int) tea.Cmd {
 func (w *wizard) validateBasics() string {
 	if strings.TrimSpace(w.name.Value()) == "" {
 		w.focusBasics(fName)
-		return "Dá um nome pro grupo."
+		return i18n.T("Give the group a name.")
 	}
 	if strings.TrimSpace(w.goal.Value()) == "" {
 		w.focusBasics(fGoal)
-		return "Escreve o objetivo. É ele que guia as IAs."
+		return i18n.T("Write a goal. It guides the AIs.")
 	}
 	info, err := os.Stat(expand(w.folder.Value()))
 	if err != nil || !info.IsDir() {
 		w.focusBasics(fFolder)
-		return "Essa pasta não existe."
+		return i18n.T("That folder does not exist.")
 	}
 	return ""
 }
 
 func (w *wizard) viewBasics() string {
 	var b strings.Builder
-	b.WriteString(w.label(fName, "Nome do grupo") + "\n" + w.name.View() + "\n\n")
-	b.WriteString(w.label(fGoal, "Objetivo") + "\n" + w.goal.View() + "\n\n")
-	b.WriteString(w.label(fFolder, "Pasta") + "\n" + w.folder.View())
+	b.WriteString(w.label(fName, i18n.T("Group name")) + "\n" + w.name.View() + "\n\n")
+	b.WriteString(w.label(fGoal, i18n.T("Goal")) + "\n" + w.goal.View() + "\n\n")
+	b.WriteString(w.label(fFolder, i18n.T("Folder")) + "\n" + w.folder.View())
 	return b.String()
 }
 
@@ -304,7 +305,7 @@ func (w *wizard) updatePick(key tea.KeyMsg) tea.Cmd {
 			total += c
 		}
 		if total == 0 {
-			w.err = "Escolhe pelo menos uma IA."
+			w.err = i18n.T("Pick at least one AI.")
 			return nil
 		}
 		w.syncDrafts()
@@ -333,16 +334,16 @@ func firstInstalled(list []engines.Engine) int {
 
 func (w *wizard) viewPick() string {
 	var b strings.Builder
-	b.WriteString(sLabel.Render("Quem entra no grupo?") + "\n\n")
+	b.WriteString(sLabel.Render(i18n.T("Who joins the group?")) + "\n\n")
 	for i, e := range w.engines {
 		on := i == w.cursor
 		if !e.Installed {
-			b.WriteString("  " + sFaint.Render("[ ] "+e.Name+"  "+e.Note) + "\n")
+			b.WriteString("  " + sFaint.Render("[ ] "+engineName(e.Name)+"  "+engineNote(e.Note)) + "\n")
 			continue
 		}
-		name := sText.Render(e.Name)
+		name := sText.Render(engineName(e.Name))
 		if on {
-			name = sActive.Render(e.Name)
+			name = sActive.Render(engineName(e.Name))
 		}
 		line := pointer(on) + check(w.counts[i] > 0) + " " + name
 		if w.counts[i] > 1 {
@@ -375,10 +376,10 @@ func (w *wizard) syncDrafts() {
 
 func (w *wizard) newDraft(e engines.Engine, n int) *draft {
 	d := &draft{engine: e, nth: n}
-	d.handle = newInput("apelido", 20)
+	d.handle = newInput(i18n.T("handle"), 20)
 	d.handle.Prompt = sMuted.Render("@")
 	d.handle.SetValue(w.freeHandle(e.Handle, n))
-	d.role = newInput("Ex.: pesquisa no navegador e traz os números", 200)
+	d.role = newInput(i18n.T("E.g. browse the web and bring back the numbers"), 200)
 	d.role.Prompt = ""
 	d.color = w.freeColor()
 	return d
@@ -501,19 +502,19 @@ func (w *wizard) validateDraft(d *draft) string {
 	switch {
 	case h == "":
 		w.focusDraft(w.cur, pHandle)
-		return "Dá um apelido pra essa IA."
+		return i18n.T("Give this AI a handle.")
 	case !handleRe.MatchString(h):
 		w.focusDraft(w.cur, pHandle)
-		return "Apelido só com letras minúsculas, números, - ou _ (até 20)."
+		return i18n.T("Use lowercase letters, numbers, - or _ for handles (up to 20).")
 	case reservedHandles[h] || h == chat.Me():
 		w.focusDraft(w.cur, pHandle)
-		return "@" + h + " é reservado. Escolhe outro."
+		return i18n.T("@%s is reserved. Pick another.", h)
 	case w.handleTaken(h, d):
 		w.focusDraft(w.cur, pHandle)
-		return "@" + h + " já está no grupo."
+		return i18n.T("@%s is already in the group.", h)
 	case strings.TrimSpace(d.role.Value()) == "":
 		w.focusDraft(w.cur, pRole)
-		return "Conta em uma frase em que @" + h + " vai ajudar."
+		return i18n.T("Say in one sentence how @%s will help.", h)
 	}
 	d.handle.SetValue(h)
 	return ""
@@ -528,13 +529,21 @@ func (w *wizard) viewProfile() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(sMuted.Render(fmt.Sprintf("IA %d de %d  ·  ", w.cur+1, len(w.drafts))) +
-		handleStyle(hex).Render(d.engine.Name) + "\n\n")
+	b.WriteString(sMuted.Render(i18n.T("AI %d of %d  ·  ", w.cur+1, len(w.drafts))) +
+		handleStyle(hex).Render(engineName(d.engine.Name)) + "\n\n")
 
+	// coluna dos rótulos do tamanho do maior, medido em colunas da tela
+	// (japonês e chinês ocupam duas colunas por letra)
+	labels := []string{i18n.T("Handle"), i18n.T("Role"), i18n.T("Model"), i18n.T("Color"), i18n.T("Access")}
+	col := 10
+	for _, l := range labels {
+		col = max(col, lipgloss.Width(l)+2)
+	}
 	row := func(f int, label, value string) {
-		lbl := sLabel.Render(fmt.Sprintf("%-10s", label))
+		padded := label + strings.Repeat(" ", col-lipgloss.Width(label))
+		lbl := sLabel.Render(padded)
 		if w.field == f {
-			lbl = sActive.Render(fmt.Sprintf("%-10s", label))
+			lbl = sActive.Render(padded)
 		}
 		b.WriteString(pointer(w.field == f) + lbl + value + "\n")
 	}
@@ -545,26 +554,26 @@ func (w *wizard) viewProfile() string {
 		return sText.Render(value)
 	}
 
-	row(pHandle, "Apelido", d.handle.View())
-	row(pRole, "Função", d.role.View())
-	b.WriteString(sFaint.Render(fmt.Sprintf("%12sEm que @%s deve ajudar?", "", h)) + "\n")
+	row(pHandle, i18n.T("Handle"), d.handle.View())
+	row(pRole, i18n.T("Role"), d.role.View())
+	b.WriteString(strings.Repeat(" ", 2+col) + sFaint.Render(i18n.T("What should @%s help with?", h)) + "\n")
 	model := engines.Default
 	if len(d.engine.Models) > 0 {
 		model = d.engine.Models[d.model]
 	}
-	row(pModel, "Modelo", choice(pModel, model))
-	row(pColor, "Cor", choice(pColor, handleStyle(hex).Render(palette[d.color].Name)))
-	row(pAccess, "Acesso", choice(pAccess, accessText(d.full)))
+	row(pModel, i18n.T("Model"), choice(pModel, modelText(model)))
+	row(pColor, i18n.T("Color"), choice(pColor, handleStyle(hex).Render(i18n.T(palette[d.color].Name))))
+	row(pAccess, i18n.T("Access"), choice(pAccess, accessText(d.full)))
 
-	b.WriteString("\n" + sMuted.Render("No chat: ") + at(h, hex))
+	b.WriteString("\n" + sMuted.Render(i18n.T("In chat: ")) + at(h, hex))
 	return b.String()
 }
 
 func accessText(full bool) string {
 	if full {
-		return "Mac inteiro (navegador e apps)"
+		return i18n.T("Whole Mac (browser and apps)")
 	}
-	return "Só a pasta do grupo"
+	return i18n.T("Group folder only")
 }
 
 // --- Líder ---
@@ -589,12 +598,13 @@ func (w *wizard) updateLead(key tea.KeyMsg) tea.Cmd {
 
 func (w *wizard) viewLead() string {
 	var b strings.Builder
-	b.WriteString(sLabel.Render("Quem lidera o grupo?") + "\n")
-	b.WriteString(sFaint.Render("Recebe suas mensagens sem @ e divide o trabalho entre os outros.") + "\n\n")
+	b.WriteString(sLabel.Render(i18n.T("Who leads the group?")) + "\n")
+	b.WriteString(sFaint.Render(i18n.T("Gets your messages without @ and splits the work among the others.")) + "\n\n")
 	for i, d := range w.drafts {
-		h := fmt.Sprintf("%-21s", "@"+d.handle.Value())
+		h := "@" + d.handle.Value()
+		h += strings.Repeat(" ", max(1, 21-lipgloss.Width(h)))
 		b.WriteString(pointer(i == w.lead) + handleStyle(palette[d.color].Hex).Render(h) +
-			sMuted.Render(d.engine.Name) + "\n")
+			sMuted.Render(engineName(d.engine.Name)) + "\n")
 	}
 	return b.String()
 }
@@ -628,14 +638,14 @@ func (w *wizard) build() store.Group {
 
 func (w *wizard) viewReview() string {
 	g := w.build()
-	return sLabel.Render("Nome") + "\n" + sText.Render(g.Name) + "\n\n" + groupSummary(g, w.engines, max(20, w.width-6))
+	return sLabel.Render(i18n.T("Name")) + "\n" + sText.Render(g.Name) + "\n\n" + groupSummary(g, w.engines, max(20, w.width-6))
 }
 
 // --- Tela ---
 
 func (w *wizard) View() string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render("Novo grupo") + "   " + w.progress() + "\n\n")
+	b.WriteString(sTitle.Render(i18n.T("New group")) + "   " + w.progress() + "\n\n")
 	switch w.step {
 	case stepBasics:
 		b.WriteString(w.viewBasics())
@@ -658,6 +668,7 @@ func (w *wizard) View() string {
 func (w *wizard) progress() string {
 	parts := make([]string, len(stepNames))
 	for i, n := range stepNames {
+		n = i18n.T(n)
 		switch {
 		case i == w.step:
 			parts[i] = sActive.Render(n)
@@ -673,15 +684,15 @@ func (w *wizard) progress() string {
 func (w *wizard) help() string {
 	switch w.step {
 	case stepBasics:
-		return "tab próximo campo · enter continua · esc cancela"
+		return i18n.T("tab next field · enter continue · esc cancel")
 	case stepPick:
-		return "↑↓ navega · espaço marca · + põe mais um igual · enter continua · esc volta"
+		return i18n.T("↑↓ navigate · space select · + add a copy · enter continue · esc back")
 	case stepProfiles:
-		return "↑↓ troca de campo · ←→ muda a opção · enter próxima IA · esc volta"
+		return i18n.T("↑↓ switch field · ←→ change option · enter next AI · esc back")
 	case stepLead:
-		return "↑↓ escolhe · enter continua · esc volta"
+		return i18n.T("↑↓ choose · enter continue · esc back")
 	default:
-		return "enter cria o grupo · esc volta"
+		return i18n.T("enter create group · esc back")
 	}
 }
 

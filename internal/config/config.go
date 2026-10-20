@@ -18,6 +18,7 @@ const (
 )
 
 type Config struct {
+	Language  string `toml:"language"`
 	NoMention string `toml:"no_mention"`
 	Voice     Voice  `toml:"voice"`
 	Disk      Disk   `toml:"disk"`
@@ -54,6 +55,7 @@ type Keys struct {
 
 func Default() Config {
 	return Config{
+		Language:  "auto",
 		NoMention: NoMentionLead,
 		Voice:     Voice{Enabled: true},
 		Disk:      Disk{WarnGB: 5, PauseGB: 2, StopMB: 500, Mole: MoleInside},
@@ -68,7 +70,10 @@ func Default() Config {
 	}
 }
 
-const template = `# Configuração do tars. Apague uma linha pra voltar ao padrão.
+const template = `# Language: auto, en, pt, es, fr, de, it, ja, zh.
+# language = "auto"
+
+# Configuração do tars. Apague uma linha pra voltar ao padrão.
 # tars settings. Delete a line to go back to the default.
 
 # Quem responde quando você não marca ninguém: "lead" (só o líder) ou "all" (todos).

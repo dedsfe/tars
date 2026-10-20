@@ -5,6 +5,7 @@ package voice
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/dedsfe/tars/internal/i18n"
 )
 
 // Model é o modelo do Whisper: bom em português e rápido no Mac.
@@ -64,7 +67,7 @@ func Download(ctx context.Context, root string, progress func(done, total int64)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download respondeu %s", resp.Status)
+		return errors.New(i18n.T("download returned %s", resp.Status))
 	}
 	part := dst + ".part"
 	f, err := os.Create(part)
@@ -137,7 +140,7 @@ func (r *Recording) Stop() (string, error) {
 	if err != nil || info.Size() < 4096 {
 		msg := strings.TrimSpace(r.errb.String())
 		if msg == "" {
-			msg = "nenhum áudio gravado. Confere se o Terminal tem permissão de microfone em Ajustes > Privacidade"
+			msg = i18n.T("no audio recorded. Check Terminal microphone access in Settings > Privacy")
 		}
 		return "", fmt.Errorf("%s", msg)
 	}
@@ -165,12 +168,12 @@ func Transcribe(ctx context.Context, root, wav string, hints []string) (string, 
 	}
 	out, err := exec.CommandContext(ctx, "whisper-cli", args...).Output()
 	if err != nil {
-		return "", fmt.Errorf("o Whisper falhou: %v", err)
+		return "", errors.New(i18n.T("Whisper failed: %v", err))
 	}
 	// tira marcações como [música] ou (silêncio) e junta as linhas
 	text := strings.Join(strings.Fields(bracketRe.ReplaceAllString(string(out), "")), " ")
 	if text == "" {
-		return "", fmt.Errorf("não entendi nada no áudio")
+		return "", errors.New(i18n.T("could not understand the audio"))
 	}
 	return text, nil
 }

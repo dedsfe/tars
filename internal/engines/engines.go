@@ -15,7 +15,7 @@ type Engine struct {
 	Handle    string // apelido sugerido, sem @
 	Models    []string
 	Installed bool
-	Note      string // por que não dá pra usar
+	Note      string // por que não dá pra usar (em inglês; a tela traduz)
 }
 
 var catalog = []Engine{
@@ -24,7 +24,7 @@ var catalog = []Engine{
 	{ID: "agy", Name: "Antigravity", Handle: "agy", Models: []string{Default}},
 	{ID: "cursor-agent", Name: "Cursor", Handle: "cursor", Models: []string{Default}},
 	{ID: "opencode", Name: "OpenCode", Handle: "opencode", Models: []string{Default}},
-	{ID: "ollama", Name: "Ollama (local, grátis)", Handle: "ollama"},
+	{ID: "ollama", Name: "Ollama (local, free)", Handle: "ollama"},
 }
 
 // Detect devolve o catálogo inteiro, marcando o que está instalado.
@@ -32,11 +32,11 @@ func Detect() []Engine {
 	out := make([]Engine, len(catalog))
 	for i, e := range catalog {
 		if _, err := exec.LookPath(e.ID); err != nil {
-			e.Note = "não instalado"
+			e.Note = "not installed"
 		} else if e.ID == "ollama" {
 			e.Models = ollamaModels()
 			if len(e.Models) == 0 {
-				e.Note = "nenhum modelo baixado"
+				e.Note = "no models downloaded"
 			} else {
 				e.Installed = true
 			}

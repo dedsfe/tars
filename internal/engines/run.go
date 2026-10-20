@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dedsfe/tars/internal/i18n"
 	"github.com/dedsfe/tars/internal/usage"
 )
 
@@ -38,6 +40,8 @@ type Turn struct {
 	Images []string
 }
 
+var ErrStopped = errors.New("stopped")
+
 // Run roda a IA sem interface e devolve a resposta final dela.
 // Sem FullAccess roda no modo seguro de cada CLI (edita a pasta do grupo).
 func Run(ctx context.Context, t Turn) (Result, error) {
@@ -59,10 +63,10 @@ func Run(ctx context.Context, t Turn) (Result, error) {
 
 	runErr := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return Result{}, fmt.Errorf("passou de %d minutos sem terminar", int(TurnTimeout.Minutes()))
+		return Result{}, errors.New(i18n.T("took more than %d minutes without finishing", int(TurnTimeout.Minutes())))
 	}
 	if ctx.Err() == context.Canceled {
-		return Result{}, fmt.Errorf("parado")
+		return Result{}, ErrStopped
 	}
 
 	var res Result
@@ -100,7 +104,7 @@ func Run(ctx context.Context, t Turn) (Result, error) {
 		return res, fmt.Errorf("%v: %s", runErr, tail(detail, 400))
 	}
 	if reply == "" {
-		return res, fmt.Errorf("terminou sem responder nada")
+		return res, errors.New(i18n.T("finished without a reply"))
 	}
 	res.Text = reply
 	return res, nil
@@ -201,11 +205,11 @@ func command(t Turn) (args []string, outFile string, err error) {
 		args = append(args, t.Prompt)
 	case "ollama":
 		if model == "" {
-			return nil, "", fmt.Errorf("escolhe um modelo do Ollama")
+			return nil, "", errors.New(i18n.T("pick an Ollama model"))
 		}
 		args = []string{"run", model, t.Prompt}
 	default:
-		return nil, "", fmt.Errorf("não sei rodar %q", t.Engine)
+		return nil, "", errors.New(i18n.T("do not know how to run %q", t.Engine))
 	}
 	return args, outFile, nil
 }
@@ -227,7 +231,7 @@ func agyStream(out []byte) (string, int64, error) {
 			continue
 		}
 		if ev.Result.Status != "SUCCESS" {
-			return "", ev.Result.Usage.Total, fmt.Errorf("terminou com status %s: %s", ev.Result.Status, tail(ev.Result.Response, 300))
+			return "", ev.Result.Usage.Total, errors.New(i18n.T("finished with status %s: %s", ev.Result.Status, tail(ev.Result.Response, 300)))
 		}
 		return strings.TrimSpace(ev.Result.Response), ev.Result.Usage.Total, nil
 	}

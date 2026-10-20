@@ -2,6 +2,7 @@
 package attach
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dedsfe/tars/internal/i18n"
 )
 
 const exts = `png|jpe?g|gif|webp|heic|heif`
@@ -54,7 +57,7 @@ func Save(src, dir string) (string, error) {
 	if ext == ".heic" || ext == ".heif" {
 		dst := filepath.Join(dir, fmt.Sprintf("%s-%s.png", stamp, safe(base)))
 		if out, err := exec.Command("sips", "-s", "format", "png", src, "--out", dst).CombinedOutput(); err != nil {
-			return "", fmt.Errorf("não consegui converter a imagem: %s", strings.TrimSpace(string(out)))
+			return "", errors.New(i18n.T("could not convert the image: %s", strings.TrimSpace(string(out))))
 		}
 		return dst, nil
 	}
@@ -82,11 +85,11 @@ end try
 end run`
 	if err := exec.Command("osascript", "-e", script, dst).Run(); err != nil {
 		os.Remove(dst)
-		return "", fmt.Errorf("não tem imagem copiada")
+		return "", errors.New(i18n.T("no image copied"))
 	}
 	if info, err := os.Stat(dst); err != nil || info.Size() == 0 {
 		os.Remove(dst)
-		return "", fmt.Errorf("não tem imagem copiada")
+		return "", errors.New(i18n.T("no image copied"))
 	}
 	return dst, nil
 }
