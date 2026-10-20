@@ -79,7 +79,8 @@ type chatScreen struct {
 	msgs    []store.Message
 	running map[string]job // quem está trabalhando agora
 	queue   []job
-	budget  map[int]int // rodada -> quantas vezes as IAs já falaram
+	budget  map[int]int  // rodada -> quantas vezes as IAs já falaram
+	stopped map[int]bool // rodadas em que o limite de falas já foi avisado
 	root    int
 	ctx     context.Context
 	stop    context.CancelFunc
@@ -110,7 +111,7 @@ type chatScreen struct {
 }
 
 func newChat(st *store.Store, g store.Group, list []engines.Engine, width, height int) *chatScreen {
-	c := &chatScreen{st: st, g: g, engines: list, running: map[string]job{}, budget: map[int]int{}}
+	c := &chatScreen{st: st, g: g, engines: list, running: map[string]job{}, budget: map[int]int{}, stopped: map[int]bool{}}
 	c.ctx, c.stop = context.WithCancel(context.Background())
 
 	msgs, err := st.Messages(g.ID)
@@ -326,15 +327,14 @@ func (c *chatScreen) pump() tea.Cmd {
 	}
 	var cmds []tea.Cmd
 	rest := c.queue[:0]
-	stopped := map[int]bool{}
 	for _, j := range c.queue {
 		switch {
-		case c.budget[j.root] >= chat.MaxAgentTurns:
-			if !stopped[j.root] {
-				stopped[j.root] = true
+		case c.budget[j.root] >= c.cfg.MaxAgentTurns:
+			if !c.stopped[j.root] {
+				c.stopped[j.root] = true
 				c.post(store.Message{From: store.System, Text: i18n.T(
 					"AIs have spoken %d times in a row. Stopped here to avoid a loop. Send a message to continue.",
-					chat.MaxAgentTurns)})
+					c.cfg.MaxAgentTurns)})
 			}
 		case c.isRunning(j.handle):
 			rest = append(rest, j)

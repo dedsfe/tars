@@ -20,9 +20,12 @@ const (
 type Config struct {
 	Language  string `toml:"language"`
 	NoMention string `toml:"no_mention"`
-	Voice     Voice  `toml:"voice"`
-	Disk      Disk   `toml:"disk"`
-	Keys      Keys   `toml:"keys"`
+	// MaxAgentTurns limita quantas vezes as IAs falam seguidas depois de
+	// uma mensagem sua, pra conversa não virar loop.
+	MaxAgentTurns int   `toml:"max_agent_turns"`
+	Voice         Voice `toml:"voice"`
+	Disk          Disk  `toml:"disk"`
+	Keys          Keys  `toml:"keys"`
 }
 
 type Voice struct {
@@ -55,10 +58,11 @@ type Keys struct {
 
 func Default() Config {
 	return Config{
-		Language:  "auto",
-		NoMention: NoMentionLead,
-		Voice:     Voice{Enabled: true},
-		Disk:      Disk{WarnGB: 5, PauseGB: 2, StopMB: 500, Mole: MoleInside},
+		Language:      "auto",
+		NoMention:     NoMentionLead,
+		MaxAgentTurns: 20,
+		Voice:         Voice{Enabled: true},
+		Disk:          Disk{WarnGB: 5, PauseGB: 2, StopMB: 500, Mole: MoleInside},
 		Keys: Keys{
 			Voice:     "ctrl+r",
 			Paste:     "ctrl+v",
@@ -79,6 +83,10 @@ const template = `# Language: auto, en, pt, es, fr, de, it, ja, zh.
 # Quem responde quando você não marca ninguém: "lead" (só o líder) ou "all" (todos).
 # Who answers when you mention nobody: "lead" or "all".
 no_mention = "lead"
+
+# Quantas vezes as IAs podem falar seguidas depois de uma mensagem sua.
+# How many times the AIs may talk in a row after one message from you.
+max_agent_turns = 20
 
 [voice]
 # ctrl+r grava sua voz e transcreve no Mac (Whisper, ~550 MB na primeira vez).
@@ -134,6 +142,9 @@ func Load(dir string) (Config, error) {
 	fill(&cfg.Keys.GroupInfo, def.Keys.GroupInfo)
 	fill(&cfg.Keys.CleanDisk, def.Keys.CleanDisk)
 	fill(&cfg.Keys.Complete, def.Keys.Complete)
+	if cfg.MaxAgentTurns <= 0 {
+		cfg.MaxAgentTurns = def.MaxAgentTurns
+	}
 	if cfg.Disk.WarnGB <= 0 {
 		cfg.Disk.WarnGB = def.Disk.WarnGB
 	}

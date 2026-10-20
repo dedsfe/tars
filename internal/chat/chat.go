@@ -21,10 +21,6 @@ const (
 	EveryoneEN = "all"
 )
 
-// MaxAgentTurns limita quantas vezes as IAs falam entre si depois de
-// uma mensagem sua, pra conversa não virar loop infinito.
-const MaxAgentTurns = 12
-
 const (
 	historyMessages = 40
 	historyChars    = 24000
