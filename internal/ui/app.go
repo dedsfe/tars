@@ -108,6 +108,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenChat:
 		_, cmd, leave := a.open.Update(msg)
 		if leave {
+			a.open.visible = false
 			a.screen, a.open = screenHome, nil
 		}
 		return a, cmd
@@ -146,6 +147,7 @@ func (a *App) openChat(g store.Group) tea.Cmd {
 		a.chats[g.ID] = c
 	}
 	c.refresh(true)
+	c.visible, c.pinged = true, false
 	a.open, a.screen = c, screenChat
 	return c.input.Focus()
 }
@@ -199,8 +201,12 @@ func (a *App) viewHome() string {
 			name = sActive.Render(g.Name)
 		}
 		line := pointer(on) + name + "  " + handles(g)
-		if c, ok := a.chats[g.ID]; ok && c.busy() {
-			line += sActive.Render("  trabalhando")
+		if c, ok := a.chats[g.ID]; ok {
+			if c.pinged {
+				line += sActive.Render("  te marcaram")
+			} else if c.busy() {
+				line += sMuted.Render("  trabalhando")
+			}
 		}
 		b.WriteString(line + "\n")
 		b.WriteString("  " + sFaint.Render(truncate(oneLine(g.Goal), max(20, a.width-8))) + "\n")

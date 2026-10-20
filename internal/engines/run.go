@@ -105,16 +105,6 @@ func command(t Turn) (args []string, outFile string, err error) {
 			args = append(args, "-m", model)
 		}
 		args = append(args, t.Prompt)
-	case "gemini":
-		args = []string{"-p", t.Prompt}
-		if t.FullAccess {
-			args = append(args, "--yolo")
-		} else {
-			args = append(args, "--approval-mode", "auto_edit")
-		}
-		if model != "" {
-			args = append(args, "-m", model)
-		}
 	case "agy":
 		args = []string{"-p", t.Prompt, "--output-format", "text", "--add-dir", t.Folder}
 		if t.FullAccess {

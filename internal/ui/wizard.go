@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"bot/internal/chat"
 	"bot/internal/engines"
 	"bot/internal/store"
 
@@ -504,7 +505,7 @@ func (w *wizard) validateDraft(d *draft) string {
 	case !handleRe.MatchString(h):
 		w.focusDraft(w.cur, pHandle)
 		return "Apelido só com letras minúsculas, números, - ou _ (até 20)."
-	case reservedHandles[h]:
+	case reservedHandles[h] || h == chat.Me():
 		w.focusDraft(w.cur, pHandle)
 		return "@" + h + " é reservado. Escolhe outro."
 	case w.handleTaken(h, d):

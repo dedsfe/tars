@@ -18,7 +18,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "bot:", err)
 		os.Exit(1)
 	}
-	p := tea.NewProgram(ui.New(st, engines.Detect()), tea.WithAltScreen())
+	p := tea.NewProgram(ui.New(st, engines.Detect()), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "bot:", err)
 		os.Exit(1)

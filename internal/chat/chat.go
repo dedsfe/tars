@@ -3,8 +3,12 @@ package chat
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"os/user"
 	"regexp"
 	"strings"
+	"sync"
 
 	"bot/internal/store"
 )
@@ -23,6 +27,60 @@ const (
 )
 
 var mentionRe = regexp.MustCompile(`@([A-Za-z0-9][A-Za-z0-9_-]*)`)
+
+var me = sync.OnceValue(func() string {
+	if h := strings.ToLower(strings.TrimPrefix(os.Getenv("BOT_ME"), "@")); h != "" {
+		return h
+	}
+	if u, err := user.Current(); err == nil {
+		if f := strings.Fields(u.Name); len(f) > 0 {
+			if h := asciiHandle(f[0]); h != "" {
+				return h
+			}
+		}
+	}
+	return "voce"
+})
+
+// Me é o seu @ no grupo, tirado do seu primeiro nome no Mac (BOT_ME troca).
+func Me() string { return me() }
+
+var accents = strings.NewReplacer(
+	"á", "a", "à", "a", "â", "a", "ã", "a", "é", "e", "ê", "e", "í", "i",
+	"ó", "o", "ô", "o", "õ", "o", "ú", "u", "ü", "u", "ç", "c",
+)
+
+func asciiHandle(s string) string {
+	var b strings.Builder
+	for _, r := range accents.Replace(strings.ToLower(s)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// MentionsMe diz se o texto marca você.
+func MentionsMe(text string) bool {
+	for _, m := range mentionRe.FindAllStringSubmatch(text, -1) {
+		if h := strings.ToLower(m[1]); h == Me() || h == Everyone {
+			return true
+		}
+	}
+	return false
+}
+
+// Notify mostra um aviso do macOS quando uma IA te marca.
+func Notify(group, from, text string) {
+	text = oneLine(text)
+	if r := []rune(text); len(r) > 180 {
+		text = string(r[:179]) + "…"
+	}
+	script := `on run argv
+display notification (item 1 of argv) with title (item 2 of argv) subtitle (item 3 of argv) sound name "Glass"
+end run`
+	_ = exec.Command("osascript", "-e", script, text, group, "@"+from+" te marcou").Start()
+}
 
 // Mentions devolve os membros marcados no texto, na ordem, sem repetir.
 // @todos vira todo mundo. self é ignorado (ninguém se chama).
@@ -75,7 +133,7 @@ func Prompt(g store.Group, me store.Member, calledBy string, history []store.Mes
 	fmt.Fprintf(&b, "SUA FUNÇÃO\n%s\n\n", me.Role)
 
 	b.WriteString("MEMBROS\n")
-	b.WriteString("- você (o humano dono do grupo; chame de \"você\", ele não tem @)\n")
+	fmt.Fprintf(&b, "- @%s (o humano dono do grupo)\n", Me())
 	for _, m := range g.Members {
 		lead := ""
 		if m.Handle == g.Lead {
@@ -90,6 +148,7 @@ func Prompt(g store.Group, me store.Member, calledBy string, history []store.Mes
 	b.WriteString("- Faça o trabalho de verdade com suas ferramentas antes de dizer que fez. Diga o que fez e onde ficou.\n")
 	b.WriteString("- Pra pedir algo a outro membro, escreva @apelido e o pedido. Ele é acordado e lê a conversa.\n")
 	b.WriteString("- Só marque alguém quando precisar que ele faça algo. Nunca marque pra agradecer, concordar ou se despedir.\n")
+	fmt.Fprintf(&b, "- Pra falar com o humano, marque @%s: ele recebe um aviso no Mac. Marque ele quando precisar de uma decisão dele ou quando entregar algo que ele pediu.\n", Me())
 	b.WriteString("- Quando terminar sua parte e não precisar de ninguém, não marque ninguém.\n")
 	if me.Handle == g.Lead {
 		b.WriteString("- Você é o líder: divida o trabalho marcando quem combina com cada parte, e no fim junte o resultado pra você (o humano).\n")
@@ -131,7 +190,7 @@ func transcript(history []store.Message) string {
 func Speaker(from string) string {
 	switch from {
 	case "":
-		return "você"
+		return "@" + Me() + " (humano)"
 	case store.System:
 		return "aviso do bot"
 	}

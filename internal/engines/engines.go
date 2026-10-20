@@ -21,7 +21,6 @@ type Engine struct {
 var catalog = []Engine{
 	{ID: "claude", Name: "Claude", Handle: "claude", Models: []string{Default, "opus", "sonnet", "haiku"}},
 	{ID: "codex", Name: "Codex", Handle: "codex", Models: []string{Default}},
-	{ID: "gemini", Name: "Gemini", Handle: "gemini", Models: []string{Default}},
 	{ID: "agy", Name: "Antigravity", Handle: "agy", Models: []string{Default}},
 	{ID: "cursor-agent", Name: "Cursor", Handle: "cursor", Models: []string{Default}},
 	{ID: "opencode", Name: "OpenCode", Handle: "opencode", Models: []string{Default}},

@@ -55,6 +55,8 @@ type chatScreen struct {
 	spin     spinner.Model
 	spinning bool
 	showInfo bool
+	visible  bool // você está com esse chat aberto
+	pinged   bool // alguma IA te marcou enquanto você estava fora
 	width    int
 	height   int
 	err      string
@@ -105,8 +107,9 @@ func (c *chatScreen) resize(width, height int) {
 	inner := max(20, width-4) // padding da página
 	c.input.SetWidth(inner)
 	c.vp.Width = inner
-	// título(2) + status(1) + entrada(2) + sugestão(1) + ajuda(2) + padding(2)
-	c.vp.Height = max(3, height-10)
+	// título(2) + status(1) + entrada(2) + sugestão(1) + ajuda(2) + padding(2),
+	// mais uma linha de folga pra nunca passar da altura da janela
+	c.vp.Height = max(3, height-11)
 	c.refresh(true)
 }
 
@@ -125,6 +128,11 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		var cmd tea.Cmd
 		c.spin, cmd = c.spin.Update(msg)
 		c.refresh(false)
+		return c, cmd, false
+	case tea.MouseMsg:
+		// a rolagem do trackpad mexe na conversa, não na janela do Terminal
+		var cmd tea.Cmd
+		c.vp, cmd = c.vp.Update(msg)
 		return c, cmd, false
 	case tea.KeyMsg:
 		c.err = ""
@@ -243,6 +251,12 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 		c.post(store.Message{From: m.handle, Text: m.err.Error(), Error: true})
 	default:
 		c.post(store.Message{From: m.handle, Text: m.text})
+		if chat.MentionsMe(m.text) {
+			chat.Notify(c.g.Name, m.handle, m.text)
+			if !c.visible {
+				c.pinged = true
+			}
+		}
 		called := chat.Mentions(m.text, c.g, m.handle)
 		for _, h := range called {
 			c.enqueue(job{handle: h, by: "@" + m.handle, caller: m.handle, root: done.root})
@@ -348,7 +362,7 @@ func (c *chatScreen) renderMessages() string {
 func (c *chatScreen) speaker(from string) string {
 	switch from {
 	case "":
-		return sTitle.Render("você")
+		return sTitle.Render("você") + sFaint.Render(" @"+chat.Me())
 	case store.System:
 		return sMuted.Render("bot")
 	}
@@ -366,7 +380,7 @@ func (c *chatScreen) paintMentions(s string) string {
 		if m, ok := chat.Member(c.g, h); ok {
 			return at(m.Handle, m.Color)
 		}
-		if h == chat.Everyone {
+		if h == chat.Everyone || h == chat.Me() {
 			return sActive.Render(w)
 		}
 		return w
