@@ -70,8 +70,8 @@ func MentionsMe(text string) bool {
 	return false
 }
 
-// Notify mostra um aviso do macOS quando uma IA te marca.
-func Notify(group, from, text string) {
+// Notify mostra um aviso do macOS (título, subtítulo e texto).
+func Notify(title, subtitle, text string) {
 	text = oneLine(text)
 	if r := []rune(text); len(r) > 180 {
 		text = string(r[:179]) + "…"
@@ -79,7 +79,7 @@ func Notify(group, from, text string) {
 	script := `on run argv
 display notification (item 1 of argv) with title (item 2 of argv) subtitle (item 3 of argv) sound name "Glass"
 end run`
-	_ = exec.Command("osascript", "-e", script, text, group, "@"+from+" te marcou").Start()
+	_ = exec.Command("osascript", "-e", script, text, title, subtitle).Start()
 }
 
 // Mentions devolve os membros marcados no texto, na ordem, sem repetir.

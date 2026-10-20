@@ -12,6 +12,7 @@ import (
 	"bot/internal/chat"
 	"bot/internal/engines"
 	"bot/internal/store"
+	"bot/internal/sys"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -57,9 +58,13 @@ type chatScreen struct {
 	showInfo bool
 	visible  bool // você está com esse chat aberto
 	pinged   bool // alguma IA te marcou enquanto você estava fora
-	width    int
-	height   int
-	err      string
+
+	disk       uint64 // espaço livre, atualizado pelo App
+	diskPaused bool
+	stopWhy    string // motivo de ter parado todo mundo, quando não foi você
+	width      int
+	height     int
+	err        string
 }
 
 func newChat(st *store.Store, g store.Group, list []engines.Engine, width, height int) *chatScreen {
@@ -195,6 +200,20 @@ func (c *chatScreen) enqueue(j job) {
 
 // pump acorda quem está na fila e não está ocupado.
 func (c *chatScreen) pump() tea.Cmd {
+	if c.disk != 0 && c.disk < sys.DiskPause && len(c.queue) > 0 {
+		if !c.diskPaused {
+			c.diskPaused = true
+			text := fmt.Sprintf("O disco está com %s livre. Pausei as IAs até ter pelo menos %s, pra não travar o Mac. Elas voltam sozinhas quando liberar espaço.",
+				sys.Size(c.disk), sys.Size(sys.DiskPause))
+			if sys.HasMole() {
+				text += " Aperta ctrl+l pra limpar com o Mole."
+			}
+			c.post(store.Message{From: store.System, Text: text})
+			chat.Notify(c.g.Name, "IAs pausadas", "Disco com "+sys.Size(c.disk)+" livre.")
+		}
+		c.refresh(true)
+		return nil
+	}
 	var cmds []tea.Cmd
 	rest := c.queue[:0]
 	stopped := map[int]bool{}
@@ -246,13 +265,20 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 	delete(c.running, m.handle)
 	switch {
 	case m.err != nil && m.err.Error() == "parado":
-		c.post(store.Message{From: store.System, Text: "Você parou @" + m.handle + "."})
+		if c.stopWhy != "" {
+			c.post(store.Message{From: store.System, Text: "Parei @" + m.handle + " " + c.stopWhy + "."})
+		} else {
+			c.post(store.Message{From: store.System, Text: "Você parou @" + m.handle + "."})
+		}
+		if len(c.running) == 0 {
+			c.stopWhy = ""
+		}
 	case m.err != nil:
 		c.post(store.Message{From: m.handle, Text: m.err.Error(), Error: true})
 	default:
 		c.post(store.Message{From: m.handle, Text: m.text})
 		if chat.MentionsMe(m.text) {
-			chat.Notify(c.g.Name, m.handle, m.text)
+			chat.Notify(c.g.Name, "@"+m.handle+" te marcou", m.text)
 			if !c.visible {
 				c.pinged = true
 			}
@@ -268,6 +294,29 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 		}
 	}
 	return c.pump()
+}
+
+// setDisk recebe o espaço livre: pausa, para ou retoma as IAs.
+func (c *chatScreen) setDisk(free uint64) tea.Cmd {
+	c.disk = free
+	if free == 0 {
+		return nil
+	}
+	if free < sys.DiskKill && len(c.running) > 0 && c.stopWhy == "" {
+		c.stopWhy = "porque o disco ficou com " + sys.Size(free) + " livre"
+		for _, j := range c.running {
+			c.enqueue(j) // volta pra fila e continua quando liberar
+		}
+		c.stop()
+		c.ctx, c.stop = context.WithCancel(context.Background())
+		return nil
+	}
+	if c.diskPaused && free >= sys.DiskPause {
+		c.diskPaused = false
+		c.post(store.Message{From: store.System, Text: "Espaço liberado (" + sys.Size(free) + "). As IAs voltaram."})
+		return c.pump()
+	}
+	return nil
 }
 
 func (c *chatScreen) stopAll() tea.Cmd {
@@ -401,12 +450,19 @@ func (c *chatScreen) status() string {
 			parts = append(parts, at(m.Handle, m.Color)+sMuted.Render(" na fila"))
 		}
 	}
+	if c.diskPaused {
+		parts = append([]string{sError.Render("pausado: disco cheio")}, parts...)
+	}
 	return strings.Join(parts, sFaint.Render("  ·  "))
 }
 
 func (c *chatScreen) View() string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render(c.g.Name) + "  " + handles(c.g) + "\n\n")
+	b.WriteString(sTitle.Render(c.g.Name) + "  " + handles(c.g))
+	if d := diskBadge(c.disk); d != "" {
+		b.WriteString(sFaint.Render("  ·  ") + d)
+	}
+	b.WriteString("\n\n")
 	if c.showInfo {
 		b.WriteString(groupSummary(c.g, c.engines, c.vp.Width))
 		b.WriteString(sHelp.Render("esc volta pra conversa"))
@@ -432,6 +488,9 @@ func (c *chatScreen) View() string {
 	help := "enter envia · @ marca alguém · pgup/pgdn rola · ctrl+g ver grupo · esc sai"
 	if c.busy() {
 		help = "enter envia · ctrl+x para todo mundo · ctrl+g ver grupo · esc sai (eles continuam)"
+	}
+	if c.disk != 0 && c.disk < sys.DiskLow && sys.HasMole() {
+		help = sWarn.Render("ctrl+l limpa o disco com o Mole") + sMuted.Render(" · ") + help
 	}
 	b.WriteString(sHelp.Render(help))
 	return b.String()

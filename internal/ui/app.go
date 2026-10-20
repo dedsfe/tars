@@ -4,9 +4,11 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"bot/internal/engines"
 	"bot/internal/store"
+	"bot/internal/sys"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,6 +33,18 @@ type App struct {
 	err     string
 	width   int
 	height  int
+	disk    uint64
+	flash   string // aviso rápido no rodapé, some na próxima tecla
+	before  uint64 // espaço livre antes de rodar o Mole
+}
+
+type moleDoneMsg struct{ err error }
+
+type diskMsg uint64
+
+// watchDisk lê o espaço livre agora e depois a cada 5 segundos.
+func watchDisk(wait time.Duration) tea.Cmd {
+	return tea.Tick(wait, func(time.Time) tea.Msg { return diskMsg(sys.FreeDisk()) })
 }
 
 func New(st *store.Store, list []engines.Engine) *App {
@@ -47,7 +61,7 @@ func (a *App) reload() {
 	a.groups = groups
 }
 
-func (a *App) Init() tea.Cmd { return nil }
+func (a *App) Init() tea.Cmd { return watchDisk(0) }
 
 func (a *App) stopAll() {
 	for _, c := range a.chats {
@@ -67,10 +81,29 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		a.flash = ""
+		switch msg.String() {
+		case "ctrl+c":
 			a.stopAll()
 			return a, tea.Quit
+		case "ctrl+l":
+			if a.screen != screenWizard && sys.HasMole() {
+				// o bot sai da frente, o Mole roda no terminal e o bot volta
+				a.before = sys.FreeDisk()
+				return a, tea.ExecProcess(sys.MoleClean(), func(err error) tea.Msg { return moleDoneMsg{err} })
+			}
 		}
+	case moleDoneMsg:
+		after := sys.FreeDisk()
+		switch {
+		case msg.err != nil:
+			a.flash = sError.Render("O Mole fechou com erro: " + msg.err.Error())
+		case after > a.before:
+			a.flash = sActive.Render("O Mole liberou " + sys.Size(after-a.before) + ".")
+		default:
+			a.flash = sMuted.Render("O Mole terminou, mas o espaço livre não aumentou.")
+		}
+		return a, watchDisk(0)
 	case wizardCancelMsg:
 		a.screen, a.wiz = screenHome, nil
 		return a, nil
@@ -84,6 +117,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.wiz = nil
 		a.cursor = a.indexOf(g.ID) + 1
 		return a, a.openChat(g)
+	case diskMsg:
+		a.disk = uint64(msg)
+		cmds := []tea.Cmd{watchDisk(5 * time.Second)}
+		for _, c := range a.chats {
+			cmds = append(cmds, c.setDisk(a.disk))
+		}
+		return a, tea.Batch(cmds...)
 	case turnDoneMsg:
 		// a resposta vai pro chat certo, mesmo com você em outra tela
 		if c, ok := a.chats[msg.groupID]; ok {
@@ -144,6 +184,7 @@ func (a *App) openChat(g store.Group) tea.Cmd {
 	c, ok := a.chats[g.ID]
 	if !ok {
 		c = newChat(a.store, g, a.engines, a.width, a.height)
+		c.disk = a.disk
 		a.chats[g.ID] = c
 	}
 	c.refresh(true)
@@ -168,18 +209,28 @@ func (a *App) indexOf(id string) int {
 }
 
 func (a *App) View() string {
+	var v string
 	switch a.screen {
 	case screenWizard:
-		return sPage.Render(a.wiz.View())
+		v = a.wiz.View()
 	case screenChat:
-		return sPage.Render(a.open.View())
+		v = a.open.View()
+	default:
+		v = a.viewHome()
 	}
-	return sPage.Render(a.viewHome())
+	if a.flash != "" {
+		v += "\n" + a.flash
+	}
+	return sPage.Render(v)
 }
 
 func (a *App) viewHome() string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render("bot") + sMuted.Render("  suas IAs trabalhando juntas") + "\n\n")
+	b.WriteString(sTitle.Render("bot") + sMuted.Render("  suas IAs trabalhando juntas"))
+	if d := diskBadge(a.disk); d != "" {
+		b.WriteString(sFaint.Render("  ·  ") + d)
+	}
+	b.WriteString("\n\n")
 
 	b.WriteString(pointer(a.cursor == 0))
 	if a.cursor == 0 {
@@ -214,7 +265,11 @@ func (a *App) viewHome() string {
 	if a.err != "" {
 		b.WriteString("\n" + sError.Render(a.err))
 	}
-	b.WriteString("\n" + sHelp.Render("↑↓ navega · enter abre · n novo grupo · q sai"))
+	help := sMuted.Render("↑↓ navega · enter abre · n novo grupo · q sai")
+	if a.disk != 0 && a.disk < sys.DiskLow && sys.HasMole() {
+		help = sWarn.Render("ctrl+l limpa o disco com o Mole") + sMuted.Render(" · ") + help
+	}
+	b.WriteString("\n" + sHelp.Render(help))
 	return b.String()
 }
 
