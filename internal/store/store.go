@@ -51,6 +51,9 @@ func Open() (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
+// Root é a pasta do bot (a que contém grupos/), onde ficam outras configurações.
+func (s *Store) Root() string { return filepath.Dir(s.dir) }
+
 // List devolve os grupos do mais novo pro mais antigo.
 func (s *Store) List() ([]Group, error) {
 	paths, err := filepath.Glob(filepath.Join(s.dir, "*.json"))

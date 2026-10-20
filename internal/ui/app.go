@@ -6,9 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"bot/internal/chat"
 	"bot/internal/engines"
 	"bot/internal/store"
 	"bot/internal/sys"
+	"bot/internal/usage"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,11 +36,20 @@ type App struct {
 	width   int
 	height  int
 	disk    uint64
-	flash   string // aviso rápido no rodapé, some na próxima tecla
-	before  uint64 // espaço livre antes de rodar o Mole
+	limits  *usage.Cache
+	warned  map[string]bool // avisos de limite já mostrados
+	flash   string          // aviso rápido no rodapé, some na próxima tecla
+	before  uint64          // espaço livre antes de rodar o Mole
 }
 
 type moleDoneMsg struct{ err error }
+
+type usageMsg struct{}
+
+// watchUsage relê os limites a cada 30 segundos.
+func watchUsage(wait time.Duration) tea.Cmd {
+	return tea.Tick(wait, func(time.Time) tea.Msg { return usageMsg{} })
+}
 
 type diskMsg uint64
 
@@ -48,7 +59,8 @@ func watchDisk(wait time.Duration) tea.Cmd {
 }
 
 func New(st *store.Store, list []engines.Engine) *App {
-	a := &App{store: st, engines: list, chats: map[string]*chatScreen{}, width: 80, height: 24}
+	a := &App{store: st, engines: list, chats: map[string]*chatScreen{}, width: 80, height: 24,
+		limits: usage.OpenCache(st.Root()), warned: map[string]bool{}}
 	a.reload()
 	return a
 }
@@ -61,7 +73,52 @@ func (a *App) reload() {
 	a.groups = groups
 }
 
-func (a *App) Init() tea.Cmd { return watchDisk(0) }
+func (a *App) Init() tea.Cmd { return tea.Batch(watchDisk(0), watchUsage(0)) }
+
+// readCodex atualiza o limite do Codex a partir dos registros dele.
+func (a *App) readCodex() {
+	if l, ok := usage.Codex(); ok {
+		a.limits.Set("codex", l)
+	}
+}
+
+// checkLimits avisa uma vez quando uma IA passa de 90% de alguma janela,
+// e acorda quem estava esperando o limite voltar.
+func (a *App) checkLimits() tea.Cmd {
+	now := time.Now()
+	for id, l := range a.limits.By {
+		w, ok := l.Worst(now)
+		if !ok || w.Used < 90 {
+			continue
+		}
+		key := fmt.Sprintf("%s|%s|%d", id, w.Name, w.ResetsAt.Unix())
+		if a.warned[key] {
+			continue
+		}
+		a.warned[key] = true
+		name := id
+		if e, ok := engines.Find(a.engines, id); ok {
+			name = e.Name
+		}
+		text := fmt.Sprintf("%s já usou %.0f%% do limite (%s). Volta %s.", name, w.Used, w.Name, when(w.ResetsAt))
+		chat.Notify("bot", "Limite perto do fim", text)
+		for _, c := range a.chats {
+			for _, m := range c.g.Members {
+				if m.Engine == id {
+					c.post(store.Message{From: store.System, Text: text})
+					break
+				}
+			}
+		}
+	}
+	var cmds []tea.Cmd
+	for _, c := range a.chats {
+		if len(c.queue) > 0 {
+			cmds = append(cmds, c.pump())
+		}
+	}
+	return tea.Batch(cmds...)
+}
 
 func (a *App) stopAll() {
 	for _, c := range a.chats {
@@ -124,13 +181,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, c.setDisk(a.disk))
 		}
 		return a, tea.Batch(cmds...)
+	case usageMsg:
+		a.readCodex()
+		return a, tea.Batch(watchUsage(30*time.Second), a.checkLimits())
 	case turnDoneMsg:
+		if msg.limits != nil {
+			a.limits.Set(msg.engine, *msg.limits)
+		}
+		if msg.engine == "codex" {
+			a.readCodex()
+		}
+		cmds := []tea.Cmd{a.checkLimits()}
 		// a resposta vai pro chat certo, mesmo com você em outra tela
 		if c, ok := a.chats[msg.groupID]; ok {
 			_, cmd, _ := c.Update(msg)
-			return a, cmd
+			cmds = append(cmds, cmd)
 		}
-		return a, nil
+		return a, tea.Batch(cmds...)
 	case spinner.TickMsg:
 		var cmds []tea.Cmd
 		for _, c := range a.chats {
@@ -184,7 +251,7 @@ func (a *App) openChat(g store.Group) tea.Cmd {
 	c, ok := a.chats[g.ID]
 	if !ok {
 		c = newChat(a.store, g, a.engines, a.width, a.height)
-		c.disk = a.disk
+		c.disk, c.limits = a.disk, a.limits
 		a.chats[g.ID] = c
 	}
 	c.refresh(true)
@@ -226,11 +293,8 @@ func (a *App) View() string {
 
 func (a *App) viewHome() string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render("bot") + sMuted.Render("  suas IAs trabalhando juntas"))
-	if d := diskBadge(a.disk); d != "" {
-		b.WriteString(sFaint.Render("  ·  ") + d)
-	}
-	b.WriteString("\n\n")
+	b.WriteString(sTitle.Render("bot") + sMuted.Render("  suas IAs trabalhando juntas") + "\n")
+	b.WriteString(statusBar(a.disk, a.limits, a.engines) + "\n\n")
 
 	b.WriteString(pointer(a.cursor == 0))
 	if a.cursor == 0 {

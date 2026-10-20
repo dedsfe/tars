@@ -3,13 +3,22 @@ package engines
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 	"time"
+
+	"bot/internal/usage"
 )
+
+// Result é o que a IA respondeu e, quando ela informa, o limite do plano.
+type Result struct {
+	Text   string
+	Limits *usage.Limits
+}
 
 // TurnTimeout é o máximo que uma IA pode ficar trabalhando numa vez.
 const TurnTimeout = 15 * time.Minute
@@ -27,13 +36,13 @@ type Turn struct {
 
 // Run roda a IA sem interface e devolve a resposta final dela.
 // Sem FullAccess roda no modo seguro de cada CLI (edita a pasta do grupo).
-func Run(ctx context.Context, t Turn) (string, error) {
+func Run(ctx context.Context, t Turn) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, TurnTimeout)
 	defer cancel()
 
 	args, outFile, err := command(t)
 	if err != nil {
-		return "", err
+		return Result{}, err
 	}
 	if outFile != "" {
 		defer os.Remove(outFile)
@@ -46,13 +55,22 @@ func Run(ctx context.Context, t Turn) (string, error) {
 
 	runErr := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("passou de %d minutos sem terminar", int(TurnTimeout.Minutes()))
+		return Result{}, fmt.Errorf("passou de %d minutos sem terminar", int(TurnTimeout.Minutes()))
 	}
 	if ctx.Err() == context.Canceled {
-		return "", fmt.Errorf("parado")
+		return Result{}, fmt.Errorf("parado")
 	}
 
+	var res Result
 	reply := stdout.String()
+	if t.Engine == "claude" {
+		text, limits, claudeErr := claudeStream(stdout.Bytes())
+		res.Limits = limits
+		if claudeErr != nil {
+			return res, claudeErr
+		}
+		reply = text
+	}
 	if outFile != "" {
 		if data, err := os.ReadFile(outFile); err == nil {
 			reply = string(data)
@@ -65,12 +83,37 @@ func Run(ctx context.Context, t Turn) (string, error) {
 		if detail == "" {
 			detail = reply
 		}
-		return "", fmt.Errorf("%v: %s", runErr, tail(detail, 400))
+		return res, fmt.Errorf("%v: %s", runErr, tail(detail, 400))
 	}
 	if reply == "" {
-		return "", fmt.Errorf("terminou sem responder nada")
+		return res, fmt.Errorf("terminou sem responder nada")
 	}
-	return reply, nil
+	res.Text = reply
+	return res, nil
+}
+
+// claudeStream tira da saída stream-json do Claude a resposta final e o limite.
+func claudeStream(out []byte) (string, *usage.Limits, error) {
+	var text string
+	var limits *usage.Limits
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		if l, ok := usage.ClaudeEvent(line); ok {
+			limits = &l
+			continue
+		}
+		var ev struct {
+			Type    string `json:"type"`
+			Result  string `json:"result"`
+			IsError bool   `json:"is_error"`
+		}
+		if json.Unmarshal(line, &ev) == nil && ev.Type == "result" {
+			if ev.IsError {
+				return "", limits, fmt.Errorf("%s", tail(ev.Result, 400))
+			}
+			text = ev.Result
+		}
+	}
+	return text, limits, nil
 }
 
 // command monta os argumentos de cada IA. O Codex escreve a resposta
@@ -79,7 +122,7 @@ func command(t Turn) (args []string, outFile string, err error) {
 	model := t.Model
 	switch t.Engine {
 	case "claude":
-		args = []string{"-p", t.Prompt, "--output-format", "text"}
+		args = []string{"-p", t.Prompt, "--output-format", "stream-json", "--verbose"}
 		if t.FullAccess {
 			args = append(args, "--dangerously-skip-permissions")
 		} else {

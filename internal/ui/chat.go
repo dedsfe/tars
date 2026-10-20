@@ -13,6 +13,7 @@ import (
 	"bot/internal/engines"
 	"bot/internal/store"
 	"bot/internal/sys"
+	"bot/internal/usage"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -34,7 +35,9 @@ type job struct {
 type turnDoneMsg struct {
 	groupID string
 	handle  string
+	engine  string
 	text    string
+	limits  *usage.Limits // limite do plano, quando a IA informa
 	err     error
 }
 
@@ -59,7 +62,8 @@ type chatScreen struct {
 	visible  bool // você está com esse chat aberto
 	pinged   bool // alguma IA te marcou enquanto você estava fora
 
-	disk       uint64 // espaço livre, atualizado pelo App
+	disk       uint64       // espaço livre, atualizado pelo App
+	limits     *usage.Cache // limite de cada IA, compartilhado com o App
 	diskPaused bool
 	stopWhy    string // motivo de ter parado todo mundo, quando não foi você
 	width      int
@@ -112,9 +116,9 @@ func (c *chatScreen) resize(width, height int) {
 	inner := max(20, width-4) // padding da página
 	c.input.SetWidth(inner)
 	c.vp.Width = inner
-	// título(2) + status(1) + entrada(2) + sugestão(1) + ajuda(2) + padding(2),
+	// título(3) + status(1) + entrada(2) + sugestão(1) + ajuda(2) + padding(2),
 	// mais uma linha de folga pra nunca passar da altura da janela
-	c.vp.Height = max(3, height-11)
+	c.vp.Height = max(3, height-12)
 	c.refresh(true)
 }
 
@@ -228,6 +232,8 @@ func (c *chatScreen) pump() tea.Cmd {
 			}
 		case c.isRunning(j.handle):
 			rest = append(rest, j)
+		case c.overLimit(j.handle):
+			rest = append(rest, j) // espera o limite do plano voltar
 		default:
 			j.start = time.Now()
 			c.running[j.handle] = j
@@ -255,9 +261,27 @@ func (c *chatScreen) turn(j job) tea.Cmd {
 	}
 	ctx, groupID := c.ctx, c.g.ID
 	return func() tea.Msg {
-		text, err := engines.Run(ctx, t)
-		return turnDoneMsg{groupID: groupID, handle: j.handle, text: text, err: err}
+		res, err := engines.Run(ctx, t)
+		return turnDoneMsg{groupID: groupID, handle: j.handle, engine: t.Engine, text: res.Text, limits: res.Limits, err: err}
 	}
+}
+
+// limitReset diz se a IA desse membro bateu o limite do plano e quando volta.
+func (c *chatScreen) limitReset(handle string) (time.Time, bool) {
+	m, ok := chat.Member(c.g, handle)
+	if !ok || c.limits == nil {
+		return time.Time{}, false
+	}
+	l, ok := c.limits.By[m.Engine]
+	if !ok {
+		return time.Time{}, false
+	}
+	return l.Exhausted(time.Now())
+}
+
+func (c *chatScreen) overLimit(handle string) bool {
+	_, over := c.limitReset(handle)
+	return over
 }
 
 func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
@@ -446,7 +470,13 @@ func (c *chatScreen) status() string {
 		}
 	}
 	for _, j := range c.queue {
-		if m, ok := chat.Member(c.g, j.handle); ok {
+		m, ok := chat.Member(c.g, j.handle)
+		if !ok {
+			continue
+		}
+		if reset, over := c.limitReset(j.handle); over {
+			parts = append(parts, at(m.Handle, m.Color)+sWarn.Render(" esperando o limite voltar ("+when(reset)+")"))
+		} else {
 			parts = append(parts, at(m.Handle, m.Color)+sMuted.Render(" na fila"))
 		}
 	}
@@ -458,11 +488,8 @@ func (c *chatScreen) status() string {
 
 func (c *chatScreen) View() string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render(c.g.Name) + "  " + handles(c.g))
-	if d := diskBadge(c.disk); d != "" {
-		b.WriteString(sFaint.Render("  ·  ") + d)
-	}
-	b.WriteString("\n\n")
+	b.WriteString(sTitle.Render(c.g.Name) + "  " + handles(c.g) + "\n")
+	b.WriteString(statusBar(c.disk, c.limits, c.engines) + "\n\n")
 	if c.showInfo {
 		b.WriteString(groupSummary(c.g, c.engines, c.vp.Width))
 		b.WriteString(sHelp.Render("esc volta pra conversa"))

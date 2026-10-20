@@ -1,7 +1,13 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
+	"bot/internal/engines"
 	"bot/internal/sys"
+	"bot/internal/usage"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -73,4 +79,56 @@ func diskBadge(free uint64) string {
 		return sWarn.Render(text)
 	}
 	return sFaint.Render(text)
+}
+
+// usageBadge mostra o limite usado de cada IA que informa isso.
+func usageBadge(c *usage.Cache, list []engines.Engine) string {
+	now := time.Now()
+	var parts []string
+	for _, e := range list {
+		l, ok := c.By[e.ID]
+		if !ok {
+			continue
+		}
+		w, ok := l.Worst(now)
+		if !ok {
+			continue
+		}
+		text := fmt.Sprintf("%s %.0f%% %s", e.Name, w.Used, w.Name)
+		switch {
+		case w.Used >= 95:
+			parts = append(parts, sError.Render(text+", volta "+when(w.ResetsAt)))
+		case w.Used >= 80:
+			parts = append(parts, sWarn.Render(text+", volta "+when(w.ResetsAt)))
+		default:
+			parts = append(parts, sFaint.Render(text))
+		}
+	}
+	return strings.Join(parts, sFaint.Render(" · "))
+}
+
+var weekdays = []string{"dom", "seg", "ter", "qua", "qui", "sex", "sáb"}
+
+// when escreve um horário curto: "15:30" hoje, "qui 14:00" em outro dia.
+func when(t time.Time) string {
+	if t.IsZero() {
+		return "depois"
+	}
+	now := time.Now()
+	if t.YearDay() == now.YearDay() && t.Year() == now.Year() {
+		return t.Format("15:04")
+	}
+	return weekdays[t.Weekday()] + " " + t.Format("15:04")
+}
+
+// statusBar junta disco e limites numa linha só, pro topo de toda tela.
+func statusBar(disk uint64, c *usage.Cache, list []engines.Engine) string {
+	var parts []string
+	if d := diskBadge(disk); d != "" {
+		parts = append(parts, d)
+	}
+	if u := usageBadge(c, list); u != "" {
+		parts = append(parts, u)
+	}
+	return strings.Join(parts, sFaint.Render("  ·  "))
 }
