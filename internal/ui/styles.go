@@ -41,6 +41,7 @@ var (
 	sText   = lipgloss.NewStyle().Foreground(cText)
 	sMuted  = lipgloss.NewStyle().Foreground(cMuted)
 	sFaint  = lipgloss.NewStyle().Foreground(cFaint)
+	sMine   = lipgloss.NewStyle().Foreground(cAccent) // barra do lado das suas mensagens
 	sError  = lipgloss.NewStyle().Foreground(cError)
 	sWarn   = lipgloss.NewStyle().Foreground(cWarn)
 	sHelp   = lipgloss.NewStyle().Foreground(cMuted).MarginTop(1)

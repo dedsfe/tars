@@ -92,9 +92,11 @@ type chatScreen struct {
 	act       chan tea.Msg                  // o que as IAs fazem, chegando ao vivo
 	listening bool                          // já tem alguém escutando o canal
 	acts      map[string][]engines.Activity // o que cada uma fez na fala atual
-	log       []logLine                     // painel de tudo que elas fizeram
-	showLog   bool
-	escAt     time.Time // último esc: outro logo depois sai do chat
+	expand    bool                          // ctrl+o: mostra todas as ações na conversa
+	hist      string                        // conversa já desenhada (muda só com mensagem nova)
+	histW     int                           // largura em que hist foi desenhada
+	mine      []int                         // linha onde começa cada mensagem sua
+	escAt     time.Time                     // último esc: outro logo depois sai do chat
 
 	vp       viewport.Model
 	input    textarea.Model
@@ -227,6 +229,10 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		c.refresh(false)
 		return c, cmd, false
 	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && c.clickedBack(msg) {
+			c.backToMine()
+			return c, nil, false
+		}
 		// a rolagem do trackpad mexe na conversa, não na janela do Terminal
 		var cmd tea.Cmd
 		c.vp, cmd = c.vp.Update(msg)
@@ -257,8 +263,8 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 				c.rec = nil
 				return c, nil, false
 			}
-			if c.showInfo || c.showLog {
-				c.showInfo, c.showLog = false, false
+			if c.showInfo {
+				c.showInfo = false
 				return c, nil, false
 			}
 			if msg.String() != c.cfg.Keys.Stop {
@@ -275,10 +281,13 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		case c.cfg.Keys.Leave:
 			return c, nil, true // eles continuam trabalhando
 		case c.cfg.Keys.GroupInfo:
-			c.showInfo, c.showLog = !c.showInfo, false
+			c.showInfo = !c.showInfo
 			return c, nil, false
 		case c.cfg.Keys.Activity:
-			c.showLog, c.showInfo = !c.showLog, false
+			c.toggleExpand()
+			return c, nil, false
+		case c.cfg.Keys.MyMessage:
+			c.backToMine()
 			return c, nil, false
 		case "pgup", "pgdown":
 			var cmd tea.Cmd
@@ -601,7 +610,7 @@ func (c *chatScreen) post(m store.Message) {
 	if !mine && !c.vp.AtBottom() {
 		c.unseen = true
 	}
-	c.refresh(mine)
+	c.redraw(mine)
 	c.seen()
 }
 
@@ -654,10 +663,61 @@ func (c *chatScreen) complete() {
 
 func (c *chatScreen) refresh(follow bool) {
 	atBottom := c.vp.AtBottom()
-	c.vp.SetContent(c.renderMessages())
+	if c.hist == "" || c.histW != c.vp.Width {
+		c.hist, c.histW = c.renderMessages(), c.vp.Width
+	}
+	c.vp.SetContent(c.hist + c.liveBlocks(max(10, c.vp.Width-2)))
 	if follow || atBottom {
 		c.vp.GotoBottom()
 	}
+}
+
+// redraw desenha a conversa de novo (mensagem nova, ctrl+o).
+func (c *chatScreen) redraw(follow bool) {
+	c.hist = ""
+	c.refresh(follow)
+}
+
+func (c *chatScreen) toggleExpand() {
+	c.expand = !c.expand
+	c.redraw(false)
+}
+
+// backToMine leva a conversa até sua última mensagem; se ela já está na tela, até a anterior.
+func (c *chatScreen) backToMine() {
+	if len(c.mine) == 0 {
+		return
+	}
+	target := -1
+	if c.mineHidden() != 0 {
+		target = c.mine[len(c.mine)-1]
+	} else {
+		for _, at := range c.mine {
+			if at < c.vp.YOffset {
+				target = at
+			}
+		}
+	}
+	if target < 0 {
+		return
+	}
+	c.vp.SetYOffset(target)
+	c.seen()
+}
+
+// mineHidden diz onde está sua última mensagem quando ela não aparece na tela:
+// -1 lá em cima, 1 lá embaixo, 0 visível (ou nenhuma).
+func (c *chatScreen) mineHidden() int {
+	if len(c.mine) == 0 {
+		return 0
+	}
+	switch last := c.mine[len(c.mine)-1]; {
+	case last < c.vp.YOffset:
+		return -1
+	case last >= c.vp.YOffset+c.vp.Height:
+		return 1
+	}
+	return 0
 }
 
 func (c *chatScreen) renderMessages() string {
@@ -667,11 +727,20 @@ func (c *chatScreen) renderMessages() string {
 	}
 	width := max(10, c.vp.Width-2)
 	var b strings.Builder
+	c.mine = c.mine[:0]
 	for i, m := range c.msgs {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(c.speaker(m.From) + "  " + sFaint.Render(m.At.Format("15:04")) + "\n")
+		pad := "  "
+		if m.From == "" {
+			// sua mensagem: barra colorida do lado, pra achar no meio da conversa
+			c.mine = append(c.mine, strings.Count(b.String(), "\n"))
+			pad = sMine.Render("▌") + " "
+			b.WriteString(pad + c.speaker(m.From) + "  " + sFaint.Render(m.At.Format("15:04")) + "\n")
+		} else {
+			b.WriteString(c.speaker(m.From) + "  " + sFaint.Render(m.At.Format("15:04")) + "\n")
+		}
 		text := m.Text
 		if m.From != "" && m.From != store.System && !m.Error {
 			text = plainMarkdown(text) // resposta de IA: tira links e títulos antes de quebrar
@@ -691,13 +760,13 @@ func (c *chatScreen) renderMessages() string {
 			body = c.paintMentions(styleMarkdown(body))
 		}
 		if body != "" {
-			b.WriteString(indent(body, "  ") + "\n")
+			b.WriteString(indent(body, pad) + "\n")
 		}
 		if a := c.renderActions(m.Actions, width); a != "" {
-			b.WriteString(indent(a, "  ") + "\n")
+			b.WriteString(indent(a, pad) + "\n")
 		}
 		for _, img := range m.Images {
-			b.WriteString("  " + sMuted.Render(i18n.T("image ")) + sText.Render(filepath.Base(img)) + "\n")
+			b.WriteString(pad + sMuted.Render(i18n.T("image ")) + sText.Render(filepath.Base(img)) + "\n")
 		}
 	}
 	return b.String()
@@ -845,14 +914,13 @@ func (c *chatScreen) status() string {
 	}
 	for _, m := range c.g.Members {
 		if j, ok := c.running[m.Handle]; ok {
+			if c.vp.AtBottom() {
+				continue // o bloco ao vivo já está no fim da conversa
+			}
 			since := time.Since(j.start)
 			d := since.Round(time.Second)
-			line := c.spin.View() + " " + at(m.Handle, m.Color) + " " + sActive.Render(thinkingWord(m.Handle, since)) +
-				sFaint.Render(fmt.Sprintf(" %d:%02d", int(d.Minutes()), int(d.Seconds())%60))
-			if acts := c.acts[m.Handle]; len(acts) > 0 {
-				line += sMuted.Render(" · " + c.actLabel(acts[len(acts)-1], 40))
-			}
-			parts = append(parts, line)
+			parts = append(parts, c.spin.View()+" "+at(m.Handle, m.Color)+" "+sActive.Render(thinkingWord(m.Handle, since))+
+				sFaint.Render(fmt.Sprintf(" %d:%02d", int(d.Minutes()), int(d.Seconds())%60)))
 		}
 	}
 	for _, j := range c.queue {
@@ -872,6 +940,9 @@ func (c *chatScreen) status() string {
 	if c.unseen {
 		parts = append([]string{sActive.Render(i18n.T("↓ new messages"))}, parts...)
 	}
+	if c.mineHidden() != 0 {
+		parts = append([]string{c.backLabel()}, parts...)
+	}
 	if c.diskPaused {
 		parts = append([]string{sError.Render(i18n.T("paused: disk full"))}, parts...)
 	}
@@ -887,11 +958,7 @@ func (c *chatScreen) View() string {
 		b.WriteString(sHelp.Render(i18n.T("esc back to chat")))
 		return b.String()
 	}
-	if c.showLog {
-		b.WriteString(lipgloss.NewStyle().Height(c.vp.Height).Render(c.viewLog(c.vp.Height)) + "\n")
-	} else {
-		b.WriteString(lipgloss.NewStyle().Height(c.vp.Height).Render(c.vp.View()) + "\n")
-	}
+	b.WriteString(lipgloss.NewStyle().Height(c.vp.Height).Render(c.vp.View()) + "\n")
 	b.WriteString(c.status() + "\n")
 	b.WriteString(c.input.View() + "\n")
 
@@ -931,7 +998,7 @@ func (c *chatScreen) View() string {
 	mole := c.disk != 0 && c.disk < sys.DiskLow && sys.HasMole()
 	if c.busy() {
 		keys = append(keys, i18n.T("%s stop all", k.Stop), i18n.T("%s leave, they keep working", k.Leave),
-			i18n.T("%s send now", k.SendNow), i18n.T("%s see what they are doing", k.Activity))
+			i18n.T("%s send now", k.SendNow), i18n.T("%s shows everything they did", k.Activity))
 		if mole {
 			keys = append(keys, sWarn.Render(i18n.T("/clean frees disk (Mole)")))
 		}
@@ -943,7 +1010,7 @@ func (c *chatScreen) View() string {
 		if c.cfg.Voice.Enabled {
 			keys = append(keys, i18n.T("%s talk", k.Voice))
 		}
-		keys = append(keys, i18n.T("%s paste screenshot", k.Paste), i18n.T("%s see what they are doing", k.Activity))
+		keys = append(keys, i18n.T("%s paste screenshot", k.Paste), i18n.T("%s shows everything they did", k.Activity))
 	}
 	help := fitKeys(keys, c.vp.Width)
 	b.WriteString(sHelp.Render(help))

@@ -80,7 +80,8 @@ brew install mole                 # disk cleanup
 | `ctrl+r` | talk (press again to transcribe) |
 | `ctrl+v` | paste a copied screenshot |
 | `ctrl+s` | send now: whoever you tagged stops mid-reply and reads your message right away |
-| `ctrl+o` | shows everything they are doing: files they touch, commands they run |
+| `ctrl+o` | expands the chat to show everything they did (every file and command); again to collapse |
+| `ctrl+p` | jumps back to your last message (or click "↑ your last message"); again for the one before |
 | `esc` | stop whoever is working (like in other terminal AIs) |
 | `esc` `esc` | leave the chat |
 | `ctrl+x` | leave the chat while they keep working |

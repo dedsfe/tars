@@ -55,7 +55,8 @@ brew install mole                 # limpeza de disco
 | `ctrl+r` | fala (aperte de novo pra transcrever) |
 | `ctrl+v` | cola um print copiado |
 | `ctrl+s` | envia agora: quem você marcou para no meio da fala e já lê sua mensagem |
-| `ctrl+o` | mostra tudo que eles estão fazendo: arquivos que mexem, comandos que rodam |
+| `ctrl+o` | expande a conversa mostrando tudo que eles fizeram (cada arquivo e comando); de novo recolhe |
+| `ctrl+p` | volta pra sua última mensagem (ou clique em "↑ sua última mensagem"); de novo vai pra anterior |
 | `esc` | para quem está trabalhando (igual nas outras IAs de terminal) |
 | `esc` `esc` | sai do chat |
 | `ctrl+x` | sai do chat e eles continuam trabalhando |

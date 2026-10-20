@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"hash/fnv"
 	"path/filepath"
 	"strings"
@@ -21,24 +22,12 @@ type activityMsg struct {
 	at      time.Time
 }
 
-// logLine é uma linha do painel "o que eles estão fazendo".
-type logLine struct {
-	handle string
-	at     time.Time
-	act    engines.Activity
-}
-
-const maxLog = 400
-
 // onActivity guarda a ação da IA pra mostrar ao vivo e pra anexar na resposta dela.
 func (c *chatScreen) onActivity(m activityMsg) tea.Cmd {
 	if _, ok := c.running[m.handle]; ok {
 		c.acts[m.handle] = append(c.acts[m.handle], m.act)
 	}
-	c.log = append(c.log, logLine{handle: m.handle, at: m.at, act: m.act})
-	if len(c.log) > maxLog {
-		c.log = c.log[len(c.log)-maxLog:]
-	}
+	c.refresh(false)
 	return waitFor(c.act)
 }
 
@@ -128,9 +117,18 @@ func toActions(acts []engines.Activity) []store.Action {
 	return out
 }
 
-// renderActions resume, embaixo da fala, o que a IA mexeu: arquivos sem repetir e comandos.
-// Leituras ficam só no painel, pra não poluir a conversa.
+// renderActions mostra, embaixo da fala, o que a IA mexeu.
+// Recolhido: uma linha com arquivos (sem repetir) e comandos; leituras ficam de fora.
+// Expandido (ctrl+o): uma ação por linha, com tudo, inclusive o que ela leu.
 func (c *chatScreen) renderActions(acts []store.Action, width int) string {
+	if c.expand {
+		var lines []string
+		for _, a := range acts {
+			act := engines.Activity{Kind: a.Kind, Detail: a.Detail}
+			lines = append(lines, sFaint.Render(actMark(a.Kind)+" ")+sMuted.Render(truncate(oneLine(c.shortPath(act)), max(10, width-2))))
+		}
+		return strings.Join(lines, "\n")
+	}
 	seen := map[string]bool{}
 	var parts []string
 	for _, a := range acts {
@@ -151,30 +149,35 @@ func (c *chatScreen) renderActions(acts []store.Action, width int) string {
 	if len(parts) > most {
 		parts = append(parts[:most], i18n.T("+%d more", len(parts)-most))
 	}
-	text := lipgloss.NewStyle().Width(width).Render(strings.Join(parts, "  "))
-	return sFaint.Render(text)
+	return sFaint.Render(lipgloss.NewStyle().Width(width).Render(strings.Join(parts, "  ")))
 }
 
-// viewLog é o painel que mostra tudo que eles estão fazendo, do mais antigo pro mais novo.
-func (c *chatScreen) viewLog(height int) string {
+// liveBlocks é o fim da conversa enquanto elas trabalham: quem está falando, a palavrinha
+// e o que está fazendo agora. Recolhido mostra as 3 últimas ações; ctrl+o mostra todas.
+func (c *chatScreen) liveBlocks(width int) string {
 	var b strings.Builder
-	b.WriteString(sLabel.Render(i18n.T("What they are doing")) + sMuted.Render("  "+i18n.T("%s back to chat", c.cfg.Keys.Activity)) + "\n\n")
-	if len(c.log) == 0 {
-		b.WriteString(sMuted.Render(i18n.T("Nothing yet. Files they touch and commands they run show up here as it happens.")) + "\n")
-		return b.String()
-	}
-	rows := c.log
-	if room := height - 2; len(rows) > room {
-		rows = rows[len(rows)-room:]
-	}
-	for _, l := range rows {
-		color := ""
-		if m, ok := memberOf(c.g, l.handle); ok {
-			color = m.Color
+	for _, m := range c.g.Members {
+		j, ok := c.running[m.Handle]
+		if !ok {
+			continue
 		}
-		line := sFaint.Render(l.at.Format("15:04:05")) + "  " + at(l.handle, color) + "  " +
-			sText.Render(actMark(l.act.Kind)+" ") + sText.Render(c.actLabel(l.act, c.vp.Width-30))
-		b.WriteString(truncateANSI(line, c.vp.Width) + "\n")
+		since := time.Since(j.start)
+		d := since.Round(time.Second)
+		b.WriteString("\n" + c.spin.View() + " " + at(m.Handle, m.Color) + " " + sActive.Render(thinkingWord(m.Handle, since)) +
+			sFaint.Render(fmt.Sprintf(" %d:%02d", int(d.Minutes()), int(d.Seconds())%60)) + "\n")
+		acts := c.acts[m.Handle]
+		if !c.expand && len(acts) > 3 {
+			b.WriteString("  " + sFaint.Render(i18n.T("… %d earlier, %s shows all", len(acts)-3, c.cfg.Keys.Activity)) + "\n")
+			acts = acts[len(acts)-3:]
+		}
+		for i, a := range acts {
+			label := c.actLabel(a, max(10, width-6))
+			if i == len(acts)-1 {
+				b.WriteString("  " + sText.Render(actMark(a.Kind)+" "+label) + "\n") // a ação de agora
+			} else {
+				b.WriteString("  " + sMuted.Render(actMark(a.Kind)+" "+label) + "\n")
+			}
+		}
 	}
 	return b.String()
 }

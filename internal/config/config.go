@@ -56,6 +56,7 @@ type Keys struct {
 	Leave     string `toml:"leave"`
 	SendNow   string `toml:"send_now"`
 	Activity  string `toml:"activity"`
+	MyMessage string `toml:"my_message"`
 	GroupInfo string `toml:"group_info"` // vazio = só /info
 	CleanDisk string `toml:"clean_disk"`
 	Complete  string `toml:"complete_mention"`
@@ -76,6 +77,7 @@ func Default() Config {
 			Leave:     "ctrl+x",
 			SendNow:   "ctrl+s",
 			Activity:  "ctrl+o",
+			MyMessage: "ctrl+p",
 			CleanDisk: "ctrl+l",
 			Complete:  "tab",
 		},
@@ -118,7 +120,8 @@ voice = "ctrl+r"
 paste_image = "ctrl+v"
 stop = "esc"          # para quem está trabalhando; duas vezes sai do chat / stops them; twice leaves the chat
 leave = "ctrl+x"      # sai do chat e eles continuam / leaves the chat, they keep working
-activity = "ctrl+o"   # mostra tudo que eles estão fazendo / shows everything they are doing
+activity = "ctrl+o"   # expande/recolhe tudo que eles fizeram / expands or collapses everything they did
+my_message = "ctrl+p" # volta pra sua última mensagem / jumps back to your last message
 send_now = "ctrl+s"   # manda já, interrompendo quem você marcou / send now, interrupting who you tagged
 group_info = ""       # vazio = use /info / empty = use /info
 clean_disk = "ctrl+l"
@@ -161,6 +164,7 @@ func Load(dir string) (Config, error) {
 	fill(&cfg.Keys.Leave, def.Keys.Leave)
 	fill(&cfg.Keys.SendNow, def.Keys.SendNow)
 	fill(&cfg.Keys.Activity, def.Keys.Activity)
+	fill(&cfg.Keys.MyMessage, def.Keys.MyMessage)
 	fill(&cfg.Keys.CleanDisk, def.Keys.CleanDisk)
 	fill(&cfg.Keys.Complete, def.Keys.Complete)
 	if cfg.MaxAgentTurns <= 0 {

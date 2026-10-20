@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dedsfe/tars/internal/i18n"
 )
 
@@ -25,7 +26,7 @@ type slashCommand struct{ name, desc string }
 // Comandos com barra, igual nas IAs de terminal: o que é raro não precisa de atalho.
 var slashCommands = []slashCommand{
 	{"/info", "group info"},
-	{"/activity", "what they are doing"},
+	{"/activity", "show or hide everything they did"},
 	{"/stop", "stop everyone"},
 	{"/clean", "clean disk (Mole)"},
 	{"/leave", "back to your groups"},
@@ -48,9 +49,9 @@ func (c *chatScreen) command(text string) (tea.Cmd, bool) {
 	}
 	switch name {
 	case "/info":
-		c.showInfo, c.showLog = true, false
+		c.showInfo = true
 	case "/activity":
-		c.showLog, c.showInfo = true, false
+		c.toggleExpand()
 	case "/stop":
 		c.stopAll()
 	case "/clean":
@@ -75,4 +76,23 @@ func (c *chatScreen) slashSuggestionsFor(text string) []slashCommand {
 		}
 	}
 	return out
+}
+
+func (c *chatScreen) backLabel() string {
+	label := i18n.T("↑ your last message (%s)", c.cfg.Keys.MyMessage)
+	if c.mineHidden() > 0 {
+		label = strings.Replace(label, "↑", "↓", 1)
+	}
+	return sActive.Render(label)
+}
+
+// clickedBack diz se o clique caiu no "↑ sua última mensagem" da linha de status.
+// A linha fica depois da margem (1), título, barra de status, linha vazia (3) e da conversa.
+func (c *chatScreen) clickedBack(m tea.MouseMsg) bool {
+	if c.mineHidden() == 0 || c.showInfo {
+		return false
+	}
+	row := 1 + 3 + c.vp.Height
+	left := 2 // margem da página
+	return m.Y == row && m.X >= left && m.X < left+lipgloss.Width(c.backLabel())
 }
