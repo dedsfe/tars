@@ -19,6 +19,7 @@ import (
 type Result struct {
 	Text   string
 	Limits *usage.Limits
+	Tokens int64 // tokens gastos, quando a IA informa
 }
 
 // TurnTimeout é o máximo que uma IA pode ficar trabalhando numa vez.
@@ -73,6 +74,16 @@ func Run(ctx context.Context, t Turn) (Result, error) {
 			return res, claudeErr
 		}
 		reply = text
+	}
+	if t.Engine == "agy" {
+		text, tokens, agyErr := agyStream(stdout.Bytes())
+		res.Tokens = tokens
+		if agyErr != nil {
+			return res, agyErr
+		}
+		if text != "" {
+			reply = text
+		}
 	}
 	if outFile != "" {
 		if data, err := os.ReadFile(outFile); err == nil {
@@ -158,7 +169,7 @@ func command(t Turn) (args []string, outFile string, err error) {
 		}
 		args = append(args, t.Prompt)
 	case "agy":
-		args = []string{"-p", t.Prompt, "--output-format", "text", "--add-dir", t.Folder}
+		args = []string{"-p", t.Prompt, "--output-format", "stream-json", "--add-dir", t.Folder}
 		for _, d := range dirs(t.Images) {
 			args = append(args, "--add-dir", d)
 		}
@@ -197,6 +208,30 @@ func command(t Turn) (args []string, outFile string, err error) {
 		return nil, "", fmt.Errorf("não sei rodar %q", t.Engine)
 	}
 	return args, outFile, nil
+}
+
+// agyStream tira da saída stream-json do Antigravity a resposta e os tokens.
+func agyStream(out []byte) (string, int64, error) {
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		var ev struct {
+			Event  string `json:"event"`
+			Result struct {
+				Status   string `json:"status"`
+				Response string `json:"response"`
+				Usage    struct {
+					Total int64 `json:"total_tokens"`
+				} `json:"usage"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(line, &ev) != nil || ev.Event != "result" {
+			continue
+		}
+		if ev.Result.Status != "SUCCESS" {
+			return "", ev.Result.Usage.Total, fmt.Errorf("terminou com status %s: %s", ev.Result.Status, tail(ev.Result.Response, 300))
+		}
+		return strings.TrimSpace(ev.Result.Response), ev.Result.Usage.Total, nil
+	}
+	return "", 0, nil
 }
 
 // dirs são as pastas das imagens, sem repetir.

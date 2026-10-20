@@ -43,6 +43,7 @@ type turnDoneMsg struct {
 	engine  string
 	text    string
 	limits  *usage.Limits // limite do plano, quando a IA informa
+	tokens  int64
 	err     error
 }
 
@@ -366,7 +367,7 @@ func (c *chatScreen) turn(j job) tea.Cmd {
 	ctx, groupID := c.ctx, c.g.ID
 	return func() tea.Msg {
 		res, err := engines.Run(ctx, t)
-		return turnDoneMsg{groupID: groupID, handle: j.handle, engine: t.Engine, text: res.Text, limits: res.Limits, err: err}
+		return turnDoneMsg{groupID: groupID, handle: j.handle, engine: t.Engine, text: res.Text, limits: res.Limits, tokens: res.Tokens, err: err}
 	}
 }
 

@@ -88,6 +88,9 @@ func usageBadge(c *usage.Cache, list []engines.Engine) string {
 	for _, e := range list {
 		l, ok := c.By[e.ID]
 		if !ok {
+			if n := c.Today(e.ID); n > 0 {
+				parts = append(parts, sFaint.Render(e.Name+" "+tokens(n)+" tokens hoje"))
+			}
 			continue
 		}
 		w, ok := l.Worst(now)
@@ -131,4 +134,15 @@ func statusBar(disk uint64, c *usage.Cache, list []engines.Engine) string {
 		parts = append(parts, u)
 	}
 	return strings.Join(parts, sFaint.Render("  ·  "))
+}
+
+// tokens escreve contagens grandes de um jeito curto: "850", "12 mil", "1,2 mi".
+func tokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return strings.Replace(fmt.Sprintf("%.1f mi", float64(n)/1e6), ".", ",", 1)
+	case n >= 1000:
+		return fmt.Sprintf("%d mil", n/1000)
+	}
+	return fmt.Sprint(n)
 }

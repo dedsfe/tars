@@ -196,6 +196,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.limits != nil {
 			a.limits.Set(msg.engine, *msg.limits)
 		}
+		a.limits.AddTokens(msg.engine, msg.tokens)
 		if msg.engine == "codex" {
 			a.readCodex()
 		}

@@ -173,8 +173,48 @@ func sortWindows(ws []Window) {
 
 // Cache guarda o último limite de cada IA em usage.json.
 type Cache struct {
-	path string
-	By   map[string]Limits `json:"by"`
+	path   string
+	By     map[string]Limits    `json:"by"`
+	Tokens map[string]DayTokens `json:"tokens,omitempty"`
+}
+
+// DayTokens soma os tokens que uma IA gastou pelo bot num dia.
+// Serve pras IAs que não informam o limite do plano (Antigravity).
+type DayTokens struct {
+	Day   string `json:"day"` // AAAA-MM-DD
+	Total int64  `json:"total"`
+}
+
+// Today devolve os tokens gastos hoje por essa IA.
+func (c *Cache) Today(engine string) int64 {
+	if t, ok := c.Tokens[engine]; ok && t.Day == time.Now().Format("2006-01-02") {
+		return t.Total
+	}
+	return 0
+}
+
+// AddTokens soma tokens ao dia de hoje.
+func (c *Cache) AddTokens(engine string, n int64) {
+	if n <= 0 {
+		return
+	}
+	if c.Tokens == nil {
+		c.Tokens = map[string]DayTokens{}
+	}
+	day := time.Now().Format("2006-01-02")
+	t := c.Tokens[engine]
+	if t.Day != day {
+		t = DayTokens{Day: day}
+	}
+	t.Total += n
+	c.Tokens[engine] = t
+	c.save()
+}
+
+func (c *Cache) save() {
+	if data, err := json.MarshalIndent(c, "", "  "); err == nil {
+		_ = os.WriteFile(c.path, data, 0o644)
+	}
 }
 
 func OpenCache(dir string) *Cache {
@@ -193,7 +233,5 @@ func (c *Cache) Set(engine string, l Limits) {
 		return // já tem um retrato mais novo
 	}
 	c.By[engine] = l
-	if data, err := json.MarshalIndent(c, "", "  "); err == nil {
-		_ = os.WriteFile(c.path, data, 0o644)
-	}
+	c.save()
 }
