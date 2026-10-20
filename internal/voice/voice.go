@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,19 +26,77 @@ const (
 // ModelPath é onde o modelo fica guardado.
 func ModelPath(root string) string { return filepath.Join(root, "modelos", Model) }
 
-// Missing diz o que falta instalar pra ouvir funcionar, ou "" se está tudo certo.
-func Missing(root string) string {
+// MissingTools são os pacotes do Homebrew que faltam pra gravar e transcrever.
+func MissingTools() []string {
+	var out []string
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return "Falta o ffmpeg pra gravar. Instala com: brew install ffmpeg"
+		out = append(out, "ffmpeg")
 	}
 	if _, err := exec.LookPath("whisper-cli"); err != nil {
-		return "Falta o Whisper pra transcrever. Instala com: brew install whisper-cpp"
+		out = append(out, "whisper-cpp")
 	}
-	if _, err := os.Stat(ModelPath(root)); err != nil {
-		return "Falta o modelo do Whisper (uns 570 MB). Baixa com: curl -L --create-dirs -o " +
-			ModelPath(root) + " " + ModelURL
+	return out
+}
+
+// HasModel diz se o modelo do Whisper já foi baixado.
+func HasModel(root string) bool {
+	_, err := os.Stat(ModelPath(root))
+	return err == nil
+}
+
+// Ready diz se dá pra gravar e transcrever agora.
+func Ready(root string) bool { return len(MissingTools()) == 0 && HasModel(root) }
+
+// Download baixa o modelo, avisando o progresso. Grava num .part e só
+// renomeia no fim, pra nunca sobrar um modelo pela metade.
+func Download(ctx context.Context, root string, progress func(done, total int64)) error {
+	dst := ModelPath(root)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
 	}
-	return ""
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ModelURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download respondeu %s", resp.Status)
+	}
+	part := dst + ".part"
+	f, err := os.Create(part)
+	if err != nil {
+		return err
+	}
+	var done int64
+	buf := make([]byte, 1<<20)
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, err := f.Write(buf[:n]); err != nil {
+				f.Close()
+				os.Remove(part)
+				return err
+			}
+			done += int64(n)
+			progress(done, resp.ContentLength)
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			f.Close()
+			os.Remove(part)
+			return rerr
+		}
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(part, dst)
 }
 
 // Recording é uma gravação em andamento.
@@ -116,10 +176,15 @@ func Transcribe(ctx context.Context, root, wav string, hints []string) (string, 
 }
 
 // microphone escolhe o microfone do Mac, não o do iPhone (Continuidade).
-// BOT_MIC troca pelo índice ou nome que você quiser.
+// Microphone (do config.toml) ou BOT_MIC trocam pelo índice ou nome que você quiser.
+var Microphone string
+
 func microphone() string {
 	if m := os.Getenv("BOT_MIC"); m != "" {
 		return m
+	}
+	if Microphone != "" {
+		return Microphone
 	}
 	out, _ := exec.Command("ffmpeg", "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", "").CombinedOutput()
 	audio := false

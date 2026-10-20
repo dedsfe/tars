@@ -13,11 +13,20 @@ import (
 const (
 	GB = 1 << 30
 	MB = 1 << 20
-
-	DiskLow   = 5 * GB   // amarelo no topo
-	DiskPause = 2 * GB   // ninguém começa a trabalhar abaixo disso
-	DiskKill  = 500 * MB // quem está trabalhando é parado
 )
+
+// Limites de disco; SetLimits troca pelos do config.toml.
+var (
+	DiskLow   uint64 = 5 * GB   // amarelo no topo
+	DiskPause uint64 = 2 * GB   // ninguém começa a trabalhar abaixo disso
+	DiskKill  uint64 = 500 * MB // quem está trabalhando é parado
+)
+
+func SetLimits(warnGB, pauseGB, stopMB float64) {
+	DiskLow = uint64(warnGB * GB)
+	DiskPause = uint64(pauseGB * GB)
+	DiskKill = uint64(stopMB * MB)
+}
 
 // FreeDisk devolve quanto sobra no disco da sua pasta pessoal.
 // 0 quando não deu pra ler.

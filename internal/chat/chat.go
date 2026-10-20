@@ -109,10 +109,14 @@ func Mentions(text string, g store.Group, self string) []string {
 	return out
 }
 
-// Targets diz quem responde a uma mensagem sua: os marcados ou, sem @, o líder.
-func Targets(text string, g store.Group) []string {
+// Targets diz quem responde a uma mensagem sua: os marcados ou, sem @,
+// o líder (ou todo mundo, se all).
+func Targets(text string, g store.Group, all bool) []string {
 	if t := Mentions(text, g, ""); len(t) > 0 {
 		return t
+	}
+	if all {
+		return Mentions("@"+Everyone, g, "")
 	}
 	return []string{g.Lead}
 }

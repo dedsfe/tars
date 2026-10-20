@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"bot/internal/chat"
+	"bot/internal/config"
 	"bot/internal/engines"
 	"bot/internal/store"
 	"bot/internal/sys"
@@ -36,6 +37,7 @@ type App struct {
 	width   int
 	height  int
 	disk    uint64
+	cfg     config.Config
 	limits  *usage.Cache
 	warned  map[string]bool // avisos de limite já mostrados
 	flash   string          // aviso rápido no rodapé, some na próxima tecla
@@ -58,8 +60,8 @@ func watchDisk(wait time.Duration) tea.Cmd {
 	return tea.Tick(wait, func(time.Time) tea.Msg { return diskMsg(sys.FreeDisk()) })
 }
 
-func New(st *store.Store, list []engines.Engine) *App {
-	a := &App{store: st, engines: list, chats: map[string]*chatScreen{}, width: 80, height: 24,
+func New(st *store.Store, list []engines.Engine, cfg config.Config) *App {
+	a := &App{store: st, engines: list, cfg: cfg, chats: map[string]*chatScreen{}, width: 80, height: 24,
 		limits: usage.OpenCache(st.Root()), warned: map[string]bool{}}
 	a.reload()
 	return a
@@ -143,7 +145,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			a.stopAll()
 			return a, tea.Quit
-		case "ctrl+l":
+		case a.cfg.Keys.CleanDisk:
 			if a.screen != screenWizard && sys.HasMole() {
 				// o bot sai da frente, o Mole roda no terminal e o bot volta
 				a.before = sys.FreeDisk()
@@ -181,8 +183,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, c.setDisk(a.disk))
 		}
 		return a, tea.Batch(cmds...)
-	case voiceDoneMsg:
-		if c, ok := a.chats[msg.groupID]; ok {
+	case voiceDoneMsg, voiceToolsDoneMsg, modelProgressMsg, modelDoneMsg:
+		if c, ok := a.chats[groupOf(msg)]; ok {
 			_, cmd, _ := c.Update(msg)
 			return a, cmd
 		}
@@ -257,7 +259,7 @@ func (a *App) openChat(g store.Group) tea.Cmd {
 	c, ok := a.chats[g.ID]
 	if !ok {
 		c = newChat(a.store, g, a.engines, a.width, a.height)
-		c.disk, c.limits = a.disk, a.limits
+		c.disk, c.limits, c.cfg = a.disk, a.limits, a.cfg
 		a.chats[g.ID] = c
 	}
 	c.refresh(true)
@@ -337,7 +339,7 @@ func (a *App) viewHome() string {
 	}
 	help := sMuted.Render("↑↓ navega · enter abre · n novo grupo · q sai")
 	if a.disk != 0 && a.disk < sys.DiskLow && sys.HasMole() {
-		help = sWarn.Render("ctrl+l limpa o disco com o Mole") + sMuted.Render(" · ") + help
+		help = sWarn.Render(a.cfg.Keys.CleanDisk+" limpa o disco com o Mole") + sMuted.Render(" · ") + help
 	}
 	b.WriteString("\n" + sHelp.Render(help))
 	return b.String()
@@ -388,4 +390,19 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n-1]) + "…"
+}
+
+// groupOf diz de qual grupo é uma mensagem de voz.
+func groupOf(msg tea.Msg) string {
+	switch m := msg.(type) {
+	case voiceDoneMsg:
+		return m.groupID
+	case voiceToolsDoneMsg:
+		return m.groupID
+	case modelProgressMsg:
+		return m.groupID
+	case modelDoneMsg:
+		return m.groupID
+	}
+	return ""
 }

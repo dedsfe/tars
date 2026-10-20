@@ -14,7 +14,7 @@ import (
 func TestTranscribe(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, ".bot")
-	if Missing(root) != "" {
+	if !Ready(root) {
 		t.Skip("Whisper ou modelo não instalado")
 	}
 	dir := t.TempDir()
