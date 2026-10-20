@@ -81,6 +81,7 @@ brew install mole                 # disk cleanup
 | `ctrl+v` | paste a copied screenshot |
 | `ctrl+s` | send now: whoever you tagged stops mid-reply and reads your message right away |
 | `ctrl+x` | stop everyone |
+| `ctrl+o` | shows everything they are doing: files they touch, commands they run |
 | `ctrl+g` | show the group |
 | `ctrl+l` | clean the disk with Mole |
 | `esc` | leave the chat (AIs keep working) |

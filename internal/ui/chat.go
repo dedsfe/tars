@@ -89,6 +89,12 @@ type chatScreen struct {
 	spoke   bool            // alguma IA respondeu desde que o grupo ficou parado
 	unseen  bool            // chegou mensagem enquanto você lia lá em cima
 
+	act       chan tea.Msg                  // o que as IAs fazem, chegando ao vivo
+	listening bool                          // já tem alguém escutando o canal
+	acts      map[string][]engines.Activity // o que cada uma fez na fala atual
+	log       []logLine                     // painel de tudo que elas fizeram
+	showLog   bool
+
 	vp       viewport.Model
 	input    textarea.Model
 	spin     spinner.Model
@@ -115,7 +121,8 @@ type chatScreen struct {
 }
 
 func newChat(st *store.Store, g store.Group, list []engines.Engine, width, height int) *chatScreen {
-	c := &chatScreen{st: st, g: g, engines: list, running: map[string]job{}, budget: map[int]int{}, stopped: map[int]bool{}, cut: map[string]bool{}}
+	c := &chatScreen{st: st, g: g, engines: list, running: map[string]job{}, budget: map[int]int{}, stopped: map[int]bool{}, cut: map[string]bool{},
+		acts: map[string][]engines.Activity{}, act: make(chan tea.Msg, 512)}
 	c.ctx, c.stop = context.WithCancel(context.Background())
 
 	msgs, err := st.Messages(g.ID)
@@ -169,6 +176,8 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case turnDoneMsg:
 		return c, c.finish(msg), false
+	case activityMsg:
+		return c, c.onActivity(msg), false
 	case voiceToolsDoneMsg:
 		if msg.err != nil || len(voice.MissingTools()) > 0 {
 			c.err = i18n.T("Setup did not finish. Try again with %s.", c.cfg.Keys.Voice)
@@ -241,13 +250,16 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 				c.rec = nil
 				return c, nil, false
 			}
-			if c.showInfo {
-				c.showInfo = false
+			if c.showInfo || c.showLog {
+				c.showInfo, c.showLog = false, false
 				return c, nil, false
 			}
 			return c, nil, true
 		case c.cfg.Keys.GroupInfo:
-			c.showInfo = !c.showInfo
+			c.showInfo, c.showLog = !c.showInfo, false
+			return c, nil, false
+		case c.cfg.Keys.Activity:
+			c.showLog, c.showInfo = !c.showLog, false
 			return c, nil, false
 		case c.cfg.Keys.StopAll:
 			return c, c.stopAll(), false
@@ -399,6 +411,10 @@ func (c *chatScreen) pump() tea.Cmd {
 		}
 	}
 	c.queue = rest
+	if len(c.running) > 0 && !c.listening {
+		c.listening = true
+		cmds = append(cmds, waitFor(c.act))
+	}
 	if len(c.running) > 0 && !c.spinning {
 		c.spinning = true
 		cmds = append(cmds, c.spin.Tick)
@@ -417,7 +433,13 @@ func (c *chatScreen) turn(j job, ctx context.Context) tea.Cmd {
 		Prompt:     chat.Prompt(c.g, me, j.by, append([]store.Message(nil), c.msgs...)),
 		Images:     chat.Images(c.msgs),
 	}
-	groupID := c.g.ID
+	groupID, ch := c.g.ID, c.act
+	t.OnActivity = func(a engines.Activity) {
+		select {
+		case ch <- activityMsg{groupID: groupID, handle: j.handle, act: a, at: time.Now()}:
+		default: // tela atrasada: perde uma linha do painel, mas nunca trava a IA
+		}
+	}
 	return func() tea.Msg {
 		res, err := engines.Run(ctx, t)
 		return turnDoneMsg{groupID: groupID, handle: j.handle, engine: t.Engine, text: res.Text, limits: res.Limits, tokens: res.Tokens, err: err}
@@ -448,25 +470,27 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 	if done.cancel != nil {
 		done.cancel()
 	}
+	acts := toActions(c.acts[m.handle])
+	delete(c.acts, m.handle)
 	mentioned := false
 	switch {
 	case errors.Is(m.err, engines.ErrStopped) && c.cut[m.handle]:
 		delete(c.cut, m.handle)
-		c.post(store.Message{From: store.System, Text: i18n.T("@%s stopped to read your new message.", m.handle)})
+		c.post(store.Message{From: store.System, Text: i18n.T("@%s stopped to read your new message.", m.handle), Actions: acts})
 	case errors.Is(m.err, engines.ErrStopped):
 		c.spoke = false // você parou: não avisa que terminou
 		if c.stopWhy != "" {
-			c.post(store.Message{From: store.System, Text: i18n.T("Stopped @%s %s.", m.handle, c.stopWhy)})
+			c.post(store.Message{From: store.System, Text: i18n.T("Stopped @%s %s.", m.handle, c.stopWhy), Actions: acts})
 		} else {
-			c.post(store.Message{From: store.System, Text: i18n.T("You stopped @%s.", m.handle)})
+			c.post(store.Message{From: store.System, Text: i18n.T("You stopped @%s.", m.handle), Actions: acts})
 		}
 		if len(c.running) == 0 {
 			c.stopWhy = ""
 		}
 	case m.err != nil:
-		c.post(store.Message{From: m.handle, Text: m.err.Error(), Error: true})
+		c.post(store.Message{From: m.handle, Text: m.err.Error(), Error: true, Actions: acts})
 	default:
-		c.post(store.Message{From: m.handle, Text: m.text})
+		c.post(store.Message{From: m.handle, Text: m.text, Actions: acts})
 		c.spoke = true
 		if chat.MentionsMe(m.text) {
 			mentioned = true
@@ -642,6 +666,9 @@ func (c *chatScreen) renderMessages() string {
 		if body != "" {
 			b.WriteString(indent(body, "  ") + "\n")
 		}
+		if a := c.renderActions(m.Actions, width); a != "" {
+			b.WriteString(indent(a, "  ") + "\n")
+		}
 		for _, img := range m.Images {
 			b.WriteString("  " + sMuted.Render(i18n.T("image ")) + sText.Render(filepath.Base(img)) + "\n")
 		}
@@ -791,9 +818,14 @@ func (c *chatScreen) status() string {
 	}
 	for _, m := range c.g.Members {
 		if j, ok := c.running[m.Handle]; ok {
-			d := time.Since(j.start).Round(time.Second)
-			parts = append(parts, c.spin.View()+" "+at(m.Handle, m.Color)+
-				sMuted.Render(i18n.T(" working %d:%02d", int(d.Minutes()), int(d.Seconds())%60)))
+			since := time.Since(j.start)
+			d := since.Round(time.Second)
+			line := c.spin.View() + " " + at(m.Handle, m.Color) + " " + sActive.Render(thinkingWord(m.Handle, since)) +
+				sFaint.Render(fmt.Sprintf(" %d:%02d", int(d.Minutes()), int(d.Seconds())%60))
+			if acts := c.acts[m.Handle]; len(acts) > 0 {
+				line += sMuted.Render(" · " + c.actLabel(acts[len(acts)-1], 40))
+			}
+			parts = append(parts, line)
 		}
 	}
 	for _, j := range c.queue {
@@ -828,7 +860,11 @@ func (c *chatScreen) View() string {
 		b.WriteString(sHelp.Render(i18n.T("esc back to chat")))
 		return b.String()
 	}
-	b.WriteString(lipgloss.NewStyle().Height(c.vp.Height).Render(c.vp.View()) + "\n")
+	if c.showLog {
+		b.WriteString(lipgloss.NewStyle().Height(c.vp.Height).Render(c.viewLog(c.vp.Height)) + "\n")
+	} else {
+		b.WriteString(lipgloss.NewStyle().Height(c.vp.Height).Render(c.vp.View()) + "\n")
+	}
 	b.WriteString(c.status() + "\n")
 	b.WriteString(c.input.View() + "\n")
 
@@ -856,7 +892,7 @@ func (c *chatScreen) View() string {
 	k := c.cfg.Keys
 	var keys []string
 	if c.busy() {
-		keys = append(keys, i18n.T("enter send"), i18n.T("%s send now", k.SendNow), i18n.T("%s stop all", k.StopAll))
+		keys = append(keys, i18n.T("enter send"), i18n.T("%s send now", k.SendNow), i18n.T("%s stop all", k.StopAll), i18n.T("%s see what they are doing", k.Activity))
 	}
 	if c.disk != 0 && c.disk < sys.DiskLow && sys.HasMole() {
 		keys = append(keys, sWarn.Render(i18n.T("%s clean disk (Mole)", k.CleanDisk)))
@@ -872,6 +908,9 @@ func (c *chatScreen) View() string {
 		keys = append(keys, i18n.T("%s paste screenshot", k.Paste))
 	}
 	keys = append(keys, i18n.T("%s group info", k.GroupInfo))
+	if !c.busy() {
+		keys = append(keys, i18n.T("%s see what they are doing", k.Activity))
+	}
 	help := fitKeys(keys, c.vp.Width)
 	b.WriteString(sHelp.Render(help))
 	return b.String()

@@ -200,7 +200,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, c.setDisk(a.disk))
 		}
 		return a, tea.Batch(cmds...)
-	case voiceDoneMsg, voiceToolsDoneMsg, modelProgressMsg, modelDoneMsg:
+	case voiceDoneMsg, voiceToolsDoneMsg, modelProgressMsg, modelDoneMsg, activityMsg:
 		if c, ok := a.chats[groupOf(msg)]; ok {
 			_, cmd, _ := c.Update(msg)
 			return a, cmd
@@ -423,6 +423,8 @@ func groupOf(msg tea.Msg) string {
 	case modelProgressMsg:
 		return m.groupID
 	case modelDoneMsg:
+		return m.groupID
+	case activityMsg:
 		return m.groupID
 	}
 	return ""

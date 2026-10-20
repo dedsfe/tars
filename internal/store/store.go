@@ -140,6 +140,14 @@ type Message struct {
 	Error bool      `json:"error,omitempty"`
 	// Images são cópias das imagens anexadas, na pasta de anexos do grupo.
 	Images []string `json:"images,omitempty"`
+	// Actions é o que a IA fez nessa fala: arquivos que mexeu, comandos que rodou...
+	Actions []Action `json:"actions,omitempty"`
+}
+
+// Action é uma coisa que a IA fez (kind: edit, write, delete, read, run, search, web, tool).
+type Action struct {
+	Kind   string `json:"kind"`
+	Detail string `json:"detail"`
 }
 
 // Attachments é a pasta onde ficam as imagens mandadas no grupo.

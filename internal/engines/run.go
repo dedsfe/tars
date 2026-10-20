@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,9 @@ type Turn struct {
 	FullAccess bool
 	// Images são imagens da conversa que a IA deve conseguir abrir.
 	Images []string
+	// OnActivity recebe, ao vivo, cada coisa que a IA faz (editar, rodar comando...).
+	// Roda na goroutine que lê a saída: não pode travar.
+	OnActivity func(Activity)
 }
 
 var ErrStopped = errors.New("stopped")
@@ -67,6 +71,16 @@ func Run(ctx context.Context, t Turn) (Result, error) {
 	cmd.WaitDelay = 3 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if parse := activityParser(t.Engine); parse != nil && t.OnActivity != nil {
+		// lê os eventos enquanto a IA trabalha, pra tela mostrar o que ela está fazendo
+		cmd.Stdout = io.MultiWriter(&stdout, &lines{line: func(l []byte) {
+			for _, a := range parse(l) {
+				if strings.TrimSpace(a.Detail) != "" {
+					t.OnActivity(a)
+				}
+			}
+		}})
+	}
 
 	runErr := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
@@ -166,7 +180,7 @@ func command(t Turn) (args []string, outFile string, err error) {
 		}
 		f.Close()
 		outFile = f.Name()
-		args = []string{"exec", "--skip-git-repo-check", "-C", t.Folder, "-o", outFile}
+		args = []string{"exec", "--json", "--skip-git-repo-check", "-C", t.Folder, "-o", outFile}
 		for _, img := range t.Images {
 			args = append(args, "--image="+img)
 		}

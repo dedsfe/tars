@@ -56,6 +56,7 @@ brew install mole                 # limpeza de disco
 | `ctrl+v` | cola um print copiado |
 | `ctrl+s` | envia agora: quem você marcou para no meio da fala e já lê sua mensagem |
 | `ctrl+x` | para todo mundo |
+| `ctrl+o` | mostra tudo que eles estão fazendo: arquivos que mexem, comandos que rodam |
 | `ctrl+g` | mostra o grupo |
 | `ctrl+l` | limpa o disco com o Mole |
 | `esc` | sai do chat (as IAs continuam trabalhando) |
