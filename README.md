@@ -72,7 +72,7 @@ brew install mole                 # disk cleanup
 | --- | --- |
 | `enter` | send (`alt+enter` for a new line) |
 | `tab` | complete the `@` you're typing |
-| `alt+↑` `alt+↓` | scroll the chat (or use the trackpad) |
+| `↑` `↓` | scroll the chat when the message box is empty (`alt+↑` `alt+↓` anytime, or the trackpad) |
 | `ctrl+r` | talk (press again to transcribe) |
 | `ctrl+v` | paste a copied screenshot |
 | `ctrl+x` | stop everyone |

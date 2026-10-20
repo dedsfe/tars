@@ -47,7 +47,7 @@ brew install mole                 # limpeza de disco
 | --- | --- |
 | `enter` | envia (`alt+enter` pula linha) |
 | `tab` | completa o `@` que você está digitando |
-| `alt+↑` `alt+↓` | rola a conversa (ou use o trackpad) |
+| `↑` `↓` | rola a conversa com a caixa de mensagem vazia (`alt+↑` `alt+↓` a qualquer hora, ou o trackpad) |
 | `ctrl+r` | fala (aperte de novo pra transcrever) |
 | `ctrl+v` | cola um print copiado |
 | `ctrl+x` | para todo mundo |

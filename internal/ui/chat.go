@@ -249,6 +249,16 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 			var cmd tea.Cmd
 			c.vp, cmd = c.vp.Update(msg)
 			return c, cmd, false
+		case "up", "down":
+			// com a caixa vazia, as setas rolam a conversa
+			if c.input.Value() == "" {
+				if msg.String() == "up" {
+					c.vp.ScrollUp(3)
+				} else {
+					c.vp.ScrollDown(3)
+				}
+				return c, nil, false
+			}
 		case "alt+up", "shift+up":
 			c.vp.ScrollUp(3) // rolagem fina pelo teclado, igual ao trackpad
 			return c, nil, false
