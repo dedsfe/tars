@@ -37,6 +37,7 @@ type job struct {
 	reply  bool   // é a volta de um resultado; não chama ninguém de volta
 	root   int    // mensagem sua que começou essa rodada
 	start  time.Time
+	cancel context.CancelFunc // para só essa fala (enviar agora)
 }
 
 type turnDoneMsg struct {
@@ -84,6 +85,9 @@ type chatScreen struct {
 	root    int
 	ctx     context.Context
 	stop    context.CancelFunc
+	cut     map[string]bool // quem foi interrompido pra ler sua mensagem nova
+	spoke   bool            // alguma IA respondeu desde que o grupo ficou parado
+	unseen  bool            // chegou mensagem enquanto você lia lá em cima
 
 	vp       viewport.Model
 	input    textarea.Model
@@ -111,7 +115,7 @@ type chatScreen struct {
 }
 
 func newChat(st *store.Store, g store.Group, list []engines.Engine, width, height int) *chatScreen {
-	c := &chatScreen{st: st, g: g, engines: list, running: map[string]job{}, budget: map[int]int{}, stopped: map[int]bool{}}
+	c := &chatScreen{st: st, g: g, engines: list, running: map[string]job{}, budget: map[int]int{}, stopped: map[int]bool{}, cut: map[string]bool{}}
 	c.ctx, c.stop = context.WithCancel(context.Background())
 
 	msgs, err := st.Messages(g.ID)
@@ -170,7 +174,8 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 			c.err = i18n.T("Setup did not finish. Try again with %s.", c.cfg.Keys.Voice)
 			return c, nil, false
 		}
-		return c, c.toggleVoice(), false
+		// o tea.ExecProcess desliga o mouse e não religa: sem isso a rolagem vai pro Terminal
+		return c, tea.Batch(c.toggleVoice(), tea.EnableMouseCellMotion), false
 	case modelProgressMsg:
 		c.dlDone, c.dlTotal = msg.done, msg.total
 		return c, waitFor(c.dl), false
@@ -210,6 +215,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		// a rolagem do trackpad mexe na conversa, não na janela do Terminal
 		var cmd tea.Cmd
 		c.vp, cmd = c.vp.Update(msg)
+		c.seen()
 		return c, cmd, false
 	case tea.KeyMsg:
 		c.err = ""
@@ -248,6 +254,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		case "pgup", "pgdown":
 			var cmd tea.Cmd
 			c.vp, cmd = c.vp.Update(msg)
+			c.seen()
 			return c, cmd, false
 		case "up", "down":
 			// com a caixa vazia, as setas rolam a conversa
@@ -257,6 +264,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 				} else {
 					c.vp.ScrollDown(3)
 				}
+				c.seen()
 				return c, nil, false
 			}
 		case "alt+up", "shift+up":
@@ -264,6 +272,7 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 			return c, nil, false
 		case "alt+down", "shift+down":
 			c.vp.ScrollDown(3)
+			c.seen()
 			return c, nil, false
 		case c.cfg.Keys.Paste:
 			// cola um print copiado como imagem anexada
@@ -277,13 +286,13 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 		case c.cfg.Keys.Complete:
 			c.complete()
 			return c, nil, false
-		case "enter":
+		case "enter", c.cfg.Keys.SendNow:
 			text := strings.TrimSpace(c.input.Value())
 			if text == "" {
 				return c, nil, false
 			}
 			c.input.Reset()
-			return c, c.send(text), false
+			return c, c.send(text, msg.String() == c.cfg.Keys.SendNow), false
 		}
 	}
 	var cmd tea.Cmd
@@ -293,7 +302,9 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 
 // --- quem fala ---
 
-func (c *chatScreen) send(text string) tea.Cmd {
+// send manda sua mensagem. Com now, quem você chamou e está no meio de uma fala
+// para na hora e recomeça já lendo o que você escreveu, em vez de esperar a vez.
+func (c *chatScreen) send(text string, now bool) tea.Cmd {
 	if info, err := os.Stat(c.g.Folder); err != nil || !info.IsDir() {
 		c.err = i18n.T("The group folder is gone: %s", tildify(c.g.Folder))
 		return nil
@@ -310,10 +321,32 @@ func (c *chatScreen) send(text string) tea.Cmd {
 	}
 	c.post(store.Message{Text: clean, Images: images})
 	c.root++
-	for _, h := range chat.Targets(clean, c.g, c.cfg.NoMention == config.NoMentionAll) {
+	targets := chat.Targets(clean, c.g, c.cfg.NoMention == config.NoMentionAll)
+	if now {
+		c.interrupt(targets)
+	}
+	for _, h := range targets {
 		c.enqueue(job{handle: h, by: "@" + chat.Me() + " (the human)", root: c.root})
 	}
 	return c.pump()
+}
+
+// interrupt para a fala atual de cada um e tira da fila os pedidos antigos dele:
+// a próxima vez que falar já lê tudo, incluindo sua mensagem nova.
+func (c *chatScreen) interrupt(handles []string) {
+	rest := c.queue[:0]
+	for _, j := range c.queue {
+		if !slices.Contains(handles, j.handle) {
+			rest = append(rest, j)
+		}
+	}
+	c.queue = rest
+	for _, h := range handles {
+		if j, ok := c.running[h]; ok && j.cancel != nil {
+			c.cut[h] = true
+			j.cancel()
+		}
+	}
 }
 
 func (c *chatScreen) enqueue(j job) {
@@ -358,9 +391,11 @@ func (c *chatScreen) pump() tea.Cmd {
 			rest = append(rest, j) // espera o limite do plano voltar
 		default:
 			j.start = time.Now()
+			ctx, cancel := context.WithCancel(c.ctx)
+			j.cancel = cancel
 			c.running[j.handle] = j
 			c.budget[j.root]++
-			cmds = append(cmds, c.turn(j))
+			cmds = append(cmds, c.turn(j, ctx))
 		}
 	}
 	c.queue = rest
@@ -368,11 +403,11 @@ func (c *chatScreen) pump() tea.Cmd {
 		c.spinning = true
 		cmds = append(cmds, c.spin.Tick)
 	}
-	c.refresh(true)
+	c.refresh(false)
 	return tea.Batch(cmds...)
 }
 
-func (c *chatScreen) turn(j job) tea.Cmd {
+func (c *chatScreen) turn(j job, ctx context.Context) tea.Cmd {
 	me, _ := chat.Member(c.g, j.handle)
 	t := engines.Turn{
 		Engine:     me.Engine,
@@ -382,7 +417,7 @@ func (c *chatScreen) turn(j job) tea.Cmd {
 		Prompt:     chat.Prompt(c.g, me, j.by, append([]store.Message(nil), c.msgs...)),
 		Images:     chat.Images(c.msgs),
 	}
-	ctx, groupID := c.ctx, c.g.ID
+	groupID := c.g.ID
 	return func() tea.Msg {
 		res, err := engines.Run(ctx, t)
 		return turnDoneMsg{groupID: groupID, handle: j.handle, engine: t.Engine, text: res.Text, limits: res.Limits, tokens: res.Tokens, err: err}
@@ -410,8 +445,16 @@ func (c *chatScreen) overLimit(handle string) bool {
 func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 	done := c.running[m.handle]
 	delete(c.running, m.handle)
+	if done.cancel != nil {
+		done.cancel()
+	}
+	mentioned := false
 	switch {
+	case errors.Is(m.err, engines.ErrStopped) && c.cut[m.handle]:
+		delete(c.cut, m.handle)
+		c.post(store.Message{From: store.System, Text: i18n.T("@%s stopped to read your new message.", m.handle)})
 	case errors.Is(m.err, engines.ErrStopped):
+		c.spoke = false // você parou: não avisa que terminou
 		if c.stopWhy != "" {
 			c.post(store.Message{From: store.System, Text: i18n.T("Stopped @%s %s.", m.handle, c.stopWhy)})
 		} else {
@@ -424,7 +467,9 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 		c.post(store.Message{From: m.handle, Text: m.err.Error(), Error: true})
 	default:
 		c.post(store.Message{From: m.handle, Text: m.text})
+		c.spoke = true
 		if chat.MentionsMe(m.text) {
+			mentioned = true
 			chat.Notify(c.g.Name, i18n.T("@%s mentioned you", m.handle), m.text)
 			if !c.visible {
 				c.pinged = true
@@ -440,7 +485,28 @@ func (c *chatScreen) finish(m turnDoneMsg) tea.Cmd {
 				caller: m.handle, reply: true, root: done.root})
 		}
 	}
-	return c.pump()
+	cmd := c.pump()
+	// todo mundo parou de falar: avisa uma vez (se já te marcaram agora, essa notificação basta)
+	if !c.busy() {
+		if c.spoke && !mentioned && !c.diskPaused {
+			chat.Notify(c.g.Name, i18n.T("Everyone finished"), lastText(c.msgs))
+			if !c.visible {
+				c.pinged = true
+			}
+		}
+		c.spoke = false
+	}
+	return cmd
+}
+
+// lastText é a última fala de uma IA, pra notificação.
+func lastText(msgs []store.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if m := msgs[i]; m.From != "" && m.From != store.System && !m.Error {
+			return "@" + m.From + ": " + m.Text
+		}
+	}
+	return ""
 }
 
 // setDisk recebe o espaço livre: pausa, para ou retoma as IAs.
@@ -471,6 +537,7 @@ func (c *chatScreen) stopAll() tea.Cmd {
 		return nil
 	}
 	c.queue = nil
+	c.spoke = false
 	c.stop()
 	c.ctx, c.stop = context.WithCancel(context.Background())
 	return nil
@@ -482,7 +549,21 @@ func (c *chatScreen) post(m store.Message) {
 	if err := c.st.Append(c.g.ID, m); err != nil {
 		c.err = i18n.T("Could not save the chat: %v", err)
 	}
-	c.refresh(true)
+	// sua mensagem desce a conversa; a das IAs só desce se você já estava no fim,
+	// pra não arrancar você do que está lendo lá em cima
+	mine := m.From == ""
+	if !mine && !c.vp.AtBottom() {
+		c.unseen = true
+	}
+	c.refresh(mine)
+	c.seen()
+}
+
+// seen apaga o aviso de mensagens novas quando você chega no fim.
+func (c *chatScreen) seen() {
+	if c.vp.AtBottom() {
+		c.unseen = false
+	}
 }
 
 // --- @ ---
@@ -726,6 +807,12 @@ func (c *chatScreen) status() string {
 			parts = append(parts, at(m.Handle, m.Color)+sMuted.Render(i18n.T(" queued")))
 		}
 	}
+	if len(c.running) > 0 {
+		parts = append(parts, sWarn.Render(i18n.T("%s stop all", c.cfg.Keys.StopAll)))
+	}
+	if c.unseen {
+		parts = append([]string{sActive.Render(i18n.T("↓ new messages"))}, parts...)
+	}
 	if c.diskPaused {
 		parts = append([]string{sError.Render(i18n.T("paused: disk full"))}, parts...)
 	}
@@ -768,13 +855,16 @@ func (c *chatScreen) View() string {
 	// do mais importante pro menos: o que não couber na largura fica de fora
 	k := c.cfg.Keys
 	var keys []string
+	if c.busy() {
+		keys = append(keys, i18n.T("enter send"), i18n.T("%s send now", k.SendNow), i18n.T("%s stop all", k.StopAll))
+	}
 	if c.disk != 0 && c.disk < sys.DiskLow && sys.HasMole() {
 		keys = append(keys, sWarn.Render(i18n.T("%s clean disk (Mole)", k.CleanDisk)))
 	}
-	keys = append(keys, i18n.T("enter send"))
 	if c.busy() {
-		keys = append(keys, i18n.T("%s stop all", k.StopAll), i18n.T("esc leave (they keep working)"))
+		keys = append(keys, i18n.T("esc leave (they keep working)"))
 	} else {
+		keys = append(keys, i18n.T("enter send"))
 		keys = append(keys, i18n.T("@ mention"), i18n.T("esc leave"))
 		if c.cfg.Voice.Enabled {
 			keys = append(keys, i18n.T("%s talk", k.Voice))

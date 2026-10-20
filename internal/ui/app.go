@@ -174,7 +174,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.flash = sMuted.Render(i18n.T("Back in tars. Free space has not changed."))
 		}
 		a.before = 0
-		return a, watchDisk(0)
+		// o tea.ExecProcess desliga o mouse e não religa: sem isso a rolagem do trackpad
+		// vai pro histórico do Terminal e parece que a conversa sumiu
+		return a, tea.Batch(watchDisk(0), tea.EnableMouseCellMotion)
 	case wizardCancelMsg:
 		a.screen, a.wiz = screenHome, nil
 		return a, nil

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/dedsfe/tars/internal/i18n"
@@ -58,6 +59,12 @@ func Run(ctx context.Context, t Turn) (Result, error) {
 
 	cmd := exec.CommandContext(ctx, t.Engine, args...)
 	cmd.Dir = t.Folder
+	// parar tem que ser na hora: a IA roda num grupo de processos próprio e o grupo
+	// inteiro morre junto, senão um filho (shell, ferramenta) segura a saída aberta
+	// e o tars fica esperando ele terminar sozinho
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 3 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 

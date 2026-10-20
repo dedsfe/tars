@@ -54,6 +54,7 @@ brew install mole                 # limpeza de disco
 | `↑` `↓` | rola a conversa com a caixa de mensagem vazia (`alt+↑` `alt+↓` a qualquer hora, ou o trackpad) |
 | `ctrl+r` | fala (aperte de novo pra transcrever) |
 | `ctrl+v` | cola um print copiado |
+| `ctrl+s` | envia agora: quem você marcou para no meio da fala e já lê sua mensagem |
 | `ctrl+x` | para todo mundo |
 | `ctrl+g` | mostra o grupo |
 | `ctrl+l` | limpa o disco com o Mole |

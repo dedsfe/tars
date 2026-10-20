@@ -79,6 +79,7 @@ brew install mole                 # disk cleanup
 | `↑` `↓` | scroll the chat when the message box is empty (`alt+↑` `alt+↓` anytime, or the trackpad) |
 | `ctrl+r` | talk (press again to transcribe) |
 | `ctrl+v` | paste a copied screenshot |
+| `ctrl+s` | send now: whoever you tagged stops mid-reply and reads your message right away |
 | `ctrl+x` | stop everyone |
 | `ctrl+g` | show the group |
 | `ctrl+l` | clean the disk with Mole |

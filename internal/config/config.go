@@ -51,6 +51,7 @@ type Keys struct {
 	Voice     string `toml:"voice"`
 	Paste     string `toml:"paste_image"`
 	StopAll   string `toml:"stop_all"`
+	SendNow   string `toml:"send_now"`
 	GroupInfo string `toml:"group_info"`
 	CleanDisk string `toml:"clean_disk"`
 	Complete  string `toml:"complete_mention"`
@@ -67,6 +68,7 @@ func Default() Config {
 			Voice:     "ctrl+r",
 			Paste:     "ctrl+v",
 			StopAll:   "ctrl+x",
+			SendNow:   "ctrl+s",
 			GroupInfo: "ctrl+g",
 			CleanDisk: "ctrl+l",
 			Complete:  "tab",
@@ -109,6 +111,7 @@ mole = "inside"
 voice = "ctrl+r"
 paste_image = "ctrl+v"
 stop_all = "ctrl+x"
+send_now = "ctrl+s"   # manda já, interrompendo quem você marcou / send now, interrupting who you tagged
 group_info = "ctrl+g"
 clean_disk = "ctrl+l"
 complete_mention = "tab"
@@ -139,6 +142,7 @@ func Load(dir string) (Config, error) {
 	fill(&cfg.Keys.Voice, def.Keys.Voice)
 	fill(&cfg.Keys.Paste, def.Keys.Paste)
 	fill(&cfg.Keys.StopAll, def.Keys.StopAll)
+	fill(&cfg.Keys.SendNow, def.Keys.SendNow)
 	fill(&cfg.Keys.GroupInfo, def.Keys.GroupInfo)
 	fill(&cfg.Keys.CleanDisk, def.Keys.CleanDisk)
 	fill(&cfg.Keys.Complete, def.Keys.Complete)
