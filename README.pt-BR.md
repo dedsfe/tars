@@ -7,6 +7,8 @@ Sem Electron, sem servidor, sem conta. Um binário em Go que comanda as IAs de t
 
 [English](README.md)
 
+<p align="center"><img src="docs/demo.gif" width="300" alt="tars demo: three AIs building a bakery landing page together"></p>
+
 ## Por quê
 
 Cada IA é boa numa coisa. Em vez de copiar e colar entre cinco abas, você cria o grupo uma vez, dá uma função pra cada IA e conversa com todas num lugar só.

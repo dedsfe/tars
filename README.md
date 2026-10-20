@@ -7,6 +7,8 @@ No Electron, no server, no account. One Go binary that drives the AI CLIs you al
 
 [Português](README.pt-BR.md)
 
+<p align="center"><img src="docs/demo.gif" width="300" alt="tars demo: three AIs building a bakery landing page together"></p>
+
 ```
  Site da padaria  @lead @dev @design
  disco 41,2 GB livre  ·  Claude 34% 5h · Codex 12% semana
