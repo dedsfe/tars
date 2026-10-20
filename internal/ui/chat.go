@@ -16,6 +16,7 @@ import (
 	"bot/internal/store"
 	"bot/internal/sys"
 	"bot/internal/usage"
+	"bot/internal/voice"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -40,6 +41,12 @@ type turnDoneMsg struct {
 	engine  string
 	text    string
 	limits  *usage.Limits // limite do plano, quando a IA informa
+	err     error
+}
+
+type voiceDoneMsg struct {
+	groupID string
+	text    string
 	err     error
 }
 
@@ -68,9 +75,12 @@ type chatScreen struct {
 	limits     *usage.Cache // limite de cada IA, compartilhado com o App
 	diskPaused bool
 	stopWhy    string // motivo de ter parado todo mundo, quando não foi você
-	width      int
-	height     int
-	err        string
+
+	rec          *voice.Recording // gravação da sua voz em andamento
+	transcribing bool
+	width        int
+	height       int
+	err          string
 }
 
 func newChat(st *store.Store, g store.Group, list []engines.Engine, width, height int) *chatScreen {
@@ -128,11 +138,23 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case turnDoneMsg:
 		return c, c.finish(msg), false
+	case voiceDoneMsg:
+		c.transcribing = false
+		if msg.err != nil {
+			c.err = "Não consegui transcrever: " + msg.err.Error()
+			return c, nil, false
+		}
+		v := c.input.Value()
+		if v != "" && !strings.HasSuffix(v, " ") {
+			c.input.InsertString(" ")
+		}
+		c.input.InsertString(msg.text)
+		return c, nil, false
 	case spinner.TickMsg:
 		if !c.spinning {
 			return c, nil, false
 		}
-		if len(c.running) == 0 {
+		if len(c.running) == 0 && c.rec == nil && !c.transcribing {
 			c.spinning = false
 			return c, nil, false
 		}
@@ -148,7 +170,14 @@ func (c *chatScreen) Update(msg tea.Msg) (*chatScreen, tea.Cmd, bool) {
 	case tea.KeyMsg:
 		c.err = ""
 		switch msg.String() {
+		case "ctrl+r":
+			return c, c.toggleVoice(), false
 		case "esc":
+			if c.rec != nil {
+				c.rec.Cancel()
+				c.rec = nil
+				return c, nil, false
+			}
 			if c.showInfo {
 				c.showInfo = false
 				return c, nil, false
@@ -490,8 +519,61 @@ func (c *chatScreen) paintMentions(s string) string {
 	})
 }
 
+// toggleVoice começa a gravar ou, se já está gravando, para e transcreve.
+func (c *chatScreen) toggleVoice() tea.Cmd {
+	root := c.st.Root()
+	if c.transcribing {
+		return nil
+	}
+	if c.rec == nil {
+		if missing := voice.Missing(root); missing != "" {
+			c.err = missing
+			return nil
+		}
+		rec, err := voice.Record(filepath.Join(root, "audio"))
+		if err != nil {
+			c.err = "Não consegui gravar: " + err.Error()
+			return nil
+		}
+		c.rec = rec
+		return c.startSpin()
+	}
+	wav, err := c.rec.Stop()
+	c.rec = nil
+	if err != nil {
+		c.err = "Não consegui gravar: " + err.Error()
+		return nil
+	}
+	c.transcribing = true
+	groupID := c.g.ID
+	hints := []string{chat.Me()}
+	for _, m := range c.g.Members {
+		hints = append(hints, m.Handle)
+	}
+	return tea.Batch(c.startSpin(), func() tea.Msg {
+		text, err := voice.Transcribe(context.Background(), root, wav, hints)
+		return voiceDoneMsg{groupID: groupID, text: text, err: err}
+	})
+}
+
+func (c *chatScreen) startSpin() tea.Cmd {
+	if c.spinning {
+		return nil
+	}
+	c.spinning = true
+	return c.spin.Tick
+}
+
 func (c *chatScreen) status() string {
 	var parts []string
+	if c.rec != nil {
+		d := time.Since(c.rec.Start).Round(time.Second)
+		parts = append(parts, sError.Render(fmt.Sprintf("● gravando %d:%02d", int(d.Minutes()), int(d.Seconds())%60))+
+			sMuted.Render("  ctrl+r termina · esc descarta"))
+	}
+	if c.transcribing {
+		parts = append(parts, c.spin.View()+sMuted.Render(" transcrevendo sua voz"))
+	}
 	for _, m := range c.g.Members {
 		if j, ok := c.running[m.Handle]; ok {
 			d := time.Since(j.start).Round(time.Second)
@@ -549,7 +631,7 @@ func (c *chatScreen) View() string {
 	}
 	b.WriteString(hint + "\n")
 
-	help := "enter envia · @ marca alguém · ctrl+v cola print · ctrl+g ver grupo · esc sai"
+	help := "enter envia · @ marca alguém · ctrl+r fala · ctrl+v cola print · ctrl+g ver grupo · esc sai"
 	if c.busy() {
 		help = "enter envia · ctrl+x para todo mundo · ctrl+g ver grupo · esc sai (eles continuam)"
 	}

@@ -181,6 +181,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, c.setDisk(a.disk))
 		}
 		return a, tea.Batch(cmds...)
+	case voiceDoneMsg:
+		if c, ok := a.chats[msg.groupID]; ok {
+			_, cmd, _ := c.Update(msg)
+			return a, cmd
+		}
+		return a, nil
 	case usageMsg:
 		a.readCodex()
 		return a, tea.Batch(watchUsage(30*time.Second), a.checkLimits())
